@@ -132,11 +132,11 @@ phrase; use `--bpm 50` or `--beats 48` so playback stays ahead.
 
 An envelope follower in the rack can steer the agent. Get its CV to the Mac
 as a MIDI CC - for example Envelope follower → Mordax (scale to 0-5 V) →
-Hapax CV in → mod matrix → CC 3 on channel 15 → iConnect DIN in - then:
+Hapax CV in → mod matrix → CC 3 on channel 15 → Hapax USB to the Mac - then:
 
 ```bash
 python ambient_agent.py --ollama --port DIN --continuous --bpm 40 \
-  --track 8:melody:C3-C5 --track 9:bass:C1-C3 --feedback DIN:15:3 --peak 91
+  --track 8:melody:C3-C5 --track 9:bass:C1-C3 --feedback HAPAX:15:3 --peak 91
 ```
 
 When the CC reaches 91 or more during a phrase, a later phrase modulates for
