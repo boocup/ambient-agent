@@ -69,6 +69,9 @@ python ambient_agent.py --port DIN --continuous
 # Same, to a synth listening on channel 7
 python ambient_agent.py --port DIN --channel 7 --continuous
 
+# Two voices composed together: a melody on channel 7, a bass line on 12
+python ambient_agent.py --port DIN --continuous --track 7:melody:C3-C5 --track 12:bass:C1-C3
+
 # Change the mood and key, and keep a recording
 python ambient_agent.py --port DIN --continuous --key "A aeolian" --style "misty, sparse, distant bells" --save session.mid
 ```
@@ -91,9 +94,10 @@ appear an octave lower than this script names them; the MIDI numbers match.
 |---|---|---|
 | `--list-ports` | | List MIDI outputs and exit |
 | `--port NAME` | | MIDI output (full name or unique part) |
-| `--channel N` | 8 | MIDI channel, 1-16 |
+| `--channel N` | 8 | MIDI channel, 1-16 (single track) |
+| `--track CH[:NAME[:LOW-HIGH]]` | | Add a voice, e.g. `7:melody` or `12:bass:C1-C3`. Repeat for more; replaces `--channel` |
 | `--key "ROOT MODE"` | `D dorian` | Modes: ionian/major, dorian, phrygian, lydian, mixolydian, aeolian/minor, locrian, major-pentatonic, minor-pentatonic |
-| `--low`, `--high` | `C2`, `C5` | Note range (C4 = middle C = MIDI 60) |
+| `--low`, `--high` | `C2`, `C5` | Note range (C4 = middle C = MIDI 60); the default for every track |
 | `--bpm` | 60 | Tempo |
 | `--beats` | 32 | Phrase length in beats |
 | `--style "TEXT"` | | Mood hints passed to Claude |
@@ -105,6 +109,19 @@ appear an octave lower than this script names them; the MIDI numbers match.
 | `--seed N` | | Random seed for `--mock` |
 | `--save FILE.mid` | | Write everything played to a MIDI file |
 | `--model` | `claude-sonnet-5-5` | Claude model ID |
+
+## Multiple tracks
+
+Each `--track` is one monophonic voice on its own MIDI channel. All voices
+are composed together in a single request, so the model can make them fit:
+separate registers, one moving while another holds, consonant meetings. The
+track name (`melody`, `bass`, `drone`, ...) tells the model the voice's role.
+
+More voices means more notes per request, so composing takes longer. With
+the local 7B model on an M1, two tracks take about 37 seconds per 32-beat
+phrase; use `--bpm 50` or `--beats 48` so playback stays ahead.
+
+`--save` writes one MIDI track per channel.
 
 ## How notes are cleaned up
 

@@ -36,43 +36,49 @@ class DryRunPort:
 
     def send(self, msg: mido.Message):
         t = time.monotonic() - self.t0
+        ch = f"ch{msg.channel + 1:<2}"
         if msg.type == "note_on":
-            print(f"  [{t:7.2f}s] gate ON   {note_name(msg.note):<4} vel {msg.velocity}")
+            print(f"  [{t:7.2f}s] {ch} gate ON   {note_name(msg.note):<4} vel {msg.velocity}")
         elif msg.type == "note_off":
-            print(f"  [{t:7.2f}s] gate off  {note_name(msg.note)}")
+            print(f"  [{t:7.2f}s] {ch} gate off  {note_name(msg.note)}")
         elif msg.type == "control_change" and msg.control == 123:
-            print(f"  [{t:7.2f}s] All Notes Off")
+            print(f"  [{t:7.2f}s] {ch} All Notes Off")
 
     def close(self):
         pass
 
 
 class Player:
-    def __init__(self, port, channel: int, bpm: float):
+    """Plays phrases on one or more channels, each strictly monophonic."""
+
+    def __init__(self, port, channels: list[int], bpm: float):
         self.port = port
-        self.channel = channel  # 0-15
         self.bpm = bpm
-        self.sounding: int | None = None  # the one note currently gated on
+        self.sounding: dict[int, int | None] = {ch: None for ch in channels}  # channel (0-15) -> gated note
         self._lock = threading.Lock()
 
-    def _send(self, msg_type: str, note: int, velocity: int = 0):
+    def _send(self, msg_type: str, channel: int, note: int, velocity: int = 0):
         with self._lock:
-            self.port.send(mido.Message(msg_type, channel=self.channel, note=note, velocity=velocity))
-            self.sounding = note if msg_type == "note_on" else None
+            self.port.send(mido.Message(msg_type, channel=channel, note=note, velocity=velocity))
+            self.sounding[channel] = note if msg_type == "note_on" else None
 
-    def play(self, notes: list[Note], length_beats: float):
-        """Play one phrase in real time; returns when the phrase's full length has elapsed."""
+    def play(self, parts: list[tuple[int, list[Note]]], length_beats: float):
+        """Play one phrase - (channel, notes) per voice, all together - in real time.
+
+        Returns when the phrase's full length has elapsed.
+        """
         spb = 60.0 / self.bpm
         events = []
-        for n in notes:
-            events.append((n.start * spb, 1, "note_on", n.pitch, n.velocity))
-            events.append((n.end * spb, 0, "note_off", n.pitch, 0))
-        events.sort(key=lambda e: (e[0], e[1]))  # note_off before note_on at the same instant
+        for channel, notes in parts:
+            for n in notes:
+                events.append((n.start * spb, 1, channel, "note_on", n.pitch, n.velocity))
+                events.append((n.end * spb, 0, channel, "note_off", n.pitch, 0))
+        events.sort(key=lambda e: (e[0], e[1]))  # note_offs before note_ons at the same instant
 
         t0 = time.monotonic()
-        for at, _, msg_type, pitch, vel in events:
+        for at, _, channel, msg_type, pitch, vel in events:
             self._sleep_until(t0 + at)
-            self._send(msg_type, pitch, vel)
+            self._send(msg_type, channel, pitch, vel)
         self._sleep_until(t0 + length_beats * spb)
 
     @staticmethod
@@ -86,32 +92,37 @@ class Player:
     def panic(self):
         """Release everything so no gate stays high."""
         with self._lock:
-            if self.sounding is not None:
-                self.port.send(mido.Message("note_off", channel=self.channel, note=self.sounding))
-                self.sounding = None
-            self.port.send(mido.Message("control_change", channel=self.channel, control=123, value=0))
+            for channel, note in self.sounding.items():
+                if note is not None:
+                    self.port.send(mido.Message("note_off", channel=channel, note=note))
+                    self.sounding[channel] = None
+                self.port.send(mido.Message("control_change", channel=channel, control=123, value=0))
 
 
-def save_midi(path: str, phrases: list[list[Note]], length_beats: float, bpm: float, channel: int):
-    """Write played phrases back-to-back as a single-track .mid file."""
+def save_midi(path: str, phrases: list[list[tuple[int, list[Note]]]], length_beats: float, bpm: float):
+    """Write played phrases back-to-back as a .mid file, one track per channel."""
     tpb = 480
-    mid = mido.MidiFile(ticks_per_beat=tpb)
-    track = mido.MidiTrack()
-    mid.tracks.append(track)
-    track.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(bpm), time=0))
+    mid = mido.MidiFile(type=1, ticks_per_beat=tpb)
 
-    events = []
-    for i, notes in enumerate(phrases):
+    by_channel: dict[int, list] = {}
+    for i, parts in enumerate(phrases):
         offset = i * length_beats
-        for n in notes:
-            events.append((round((offset + n.start) * tpb), 1, "note_on", n.pitch, n.velocity))
-            events.append((round((offset + n.end) * tpb), 0, "note_off", n.pitch, 0))
-    events.sort(key=lambda e: (e[0], e[1]))
+        for channel, notes in parts:
+            events = by_channel.setdefault(channel, [])
+            for n in notes:
+                events.append((round((offset + n.start) * tpb), 1, "note_on", n.pitch, n.velocity))
+                events.append((round((offset + n.end) * tpb), 0, "note_off", n.pitch, 0))
 
-    now = 0
-    for tick, _, msg_type, pitch, vel in events:
-        track.append(mido.Message(msg_type, channel=channel, note=pitch, velocity=vel, time=tick - now))
-        now = tick
     end_tick = round(len(phrases) * length_beats * tpb)
-    track.append(mido.MetaMessage("end_of_track", time=max(0, end_tick - now)))
+    for i, (channel, events) in enumerate(sorted(by_channel.items())):
+        track = mido.MidiTrack()
+        mid.tracks.append(track)
+        if i == 0:
+            track.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(bpm), time=0))
+        events.sort(key=lambda e: (e[0], e[1]))
+        now = 0
+        for tick, _, msg_type, pitch, vel in events:
+            track.append(mido.Message(msg_type, channel=channel, note=pitch, velocity=vel, time=tick - now))
+            now = tick
+        track.append(mido.MetaMessage("end_of_track", time=max(0, end_tick - now)))
     mid.save(path)
