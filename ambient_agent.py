@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ambient music agent: Claude composes slow phrases, played live as MIDI.
+"""Ambient music agent: Claude (or a local model) composes slow phrases, played live as MIDI.
 
 Mac -> USB MIDI interface -> MIDI-to-CV module -> one monophonic voice.
 """
@@ -15,7 +15,8 @@ import threading
 import anthropic
 import mido
 
-from composer import DEFAULT_MODEL, ClaudeComposer, MockComposer, Phrase, Settings
+from composer import (DEFAULT_MODEL, DEFAULT_OLLAMA_MODEL, ClaudeComposer, MockComposer,
+                      OllamaComposer, Phrase, Settings)
 from music import clean_phrase, format_phrase, parse_key, parse_note, scale_pitches
 from player import DryRunPort, Player, find_port, output_names, save_midi
 
@@ -39,11 +40,15 @@ def parse_args(argv=None):
     p.add_argument("--phrases", type=int, default=0, help="with --loop, stop after this many (0 = forever)")
     p.add_argument("--dry-run", action="store_true", help="print notes instead of sending MIDI")
     p.add_argument("--mock", action="store_true", help="don't call the API; use a simple offline composer")
+    p.add_argument("--ollama", nargs="?", const=DEFAULT_OLLAMA_MODEL, metavar="MODEL",
+                   help=f"compose with a local model via Ollama instead of Claude (default {DEFAULT_OLLAMA_MODEL})")
     p.add_argument("--seed", type=int, help="random seed for --mock")
     p.add_argument("--save", metavar="FILE.mid", help="also write everything played to a MIDI file")
     p.add_argument("--model", default=DEFAULT_MODEL, help="Claude model ID")
     args = p.parse_args(argv)
 
+    if args.mock and args.ollama:
+        p.error("use either --mock or --ollama, not both")
     if not 1 <= args.channel <= 16:
         p.error("--channel must be 1-16")
     if args.bpm <= 0 or args.beats <= 0:
@@ -104,10 +109,15 @@ def main(argv=None) -> int:
         port_label = find_port(args.port)
         port = mido.open_output(port_label)
 
-    if not args.mock and not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+    if not (args.mock or args.ollama) and not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
         port.close()
         raise SystemExit("ANTHROPIC_API_KEY isn't set. Export it (see README), or use --mock.")
-    composer = MockComposer(args.seed) if args.mock else ClaudeComposer(args.model)
+    if args.mock:
+        composer, composer_label = MockComposer(args.seed), "mock"
+    elif args.ollama:
+        composer, composer_label = OllamaComposer(args.ollama), f"{args.ollama} (local, via Ollama)"
+    else:
+        composer, composer_label = ClaudeComposer(args.model), args.model
     player = Player(port, channel=args.channel - 1, bpm=args.bpm)
     played: list[Phrase] = []
 
@@ -119,7 +129,7 @@ def main(argv=None) -> int:
     print(f"Output: {port_label}, channel {args.channel}")
     print(f"{args.key}, {args.low}-{args.high}, {args.bpm:g} BPM, {args.beats:g}-beat phrases"
           + (f", style: {args.style}" if args.style else ""))
-    print(f"Composer: {'mock' if args.mock else args.model}. Ctrl+C to stop.\n")
+    print(f"Composer: {composer_label}. Ctrl+C to stop.\n")
 
     def compose(previous: Phrase | None) -> Phrase:
         phrase = composer.compose(settings, previous)

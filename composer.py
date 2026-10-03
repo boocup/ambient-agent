@@ -1,9 +1,11 @@
-"""Phrase composers: Claude (Anthropic API) and an offline mock."""
+"""Phrase composers: Claude (Anthropic API), a local model (Ollama), and an offline mock."""
 
 from __future__ import annotations
 
 import json
 import random
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 
 import anthropic
@@ -12,6 +14,8 @@ from music import NOTE_NAMES, Note, note_name
 
 
 DEFAULT_MODEL = "claude-sonnet-5-5"
+DEFAULT_OLLAMA_MODEL = "qwen2.5:7b"
+OLLAMA_URL = "http://localhost:11434"
 
 
 @dataclass
@@ -91,21 +95,32 @@ def _settings_text(s: Settings) -> str:
     return "\n".join(lines)
 
 
+def _user_prompt(s: Settings, previous: Phrase | None) -> str:
+    prompt = _settings_text(s)
+    if previous is not None:
+        prev = json.dumps([n.to_dict() for n in previous.notes])
+        prompt += (
+            f"\n\nPrevious phrase (\"{previous.intent}\"):\n{prev}\n\n"
+            "Compose the next phrase, developing from this one."
+        )
+    else:
+        prompt += "\n\nCompose the opening phrase."
+    return prompt
+
+
+def _parse_phrase(text: str) -> Phrase:
+    data = json.loads(text)
+    notes = [Note(**n) for n in data["notes"]]
+    return Phrase(notes=notes, intent=data.get("intent", ""))
+
+
 class ClaudeComposer:
     def __init__(self, model: str = DEFAULT_MODEL):
         self.client = anthropic.Anthropic()
         self.model = model
 
     def compose(self, s: Settings, previous: Phrase | None) -> Phrase:
-        prompt = _settings_text(s)
-        if previous is not None:
-            prev = json.dumps([n.to_dict() for n in previous.notes])
-            prompt += (
-                f"\n\nPrevious phrase (\"{previous.intent}\"):\n{prev}\n\n"
-                "Compose the next phrase, developing from this one."
-            )
-        else:
-            prompt += "\n\nCompose the opening phrase."
+        prompt = _user_prompt(s, previous)
 
         # Server-side fallback: if the model declines (very unlikely for music),
         # the API retries on a fallback model within the same call.
@@ -129,10 +144,64 @@ class ClaudeComposer:
         text = next((b.text for b in response.content if b.type == "text"), None)
         if text is None:
             raise RuntimeError(f"No text in Claude's response (stop_reason={response.stop_reason})")
+        return _parse_phrase(text)
 
-        data = json.loads(text)
-        notes = [Note(**n) for n in data["notes"]]
-        return Phrase(notes=notes, intent=data.get("intent", ""))
+
+# Small local models follow a concrete example far better than a description.
+OLLAMA_EXAMPLE = """\
+
+Example of the kind of phrase wanted (D dorian, 32 beats) - vary note count \
+(6-12), lengths (1-6 beats) and rests; don't copy it:
+{"intent": "A low call that climbs by fourth, lingers, and falls back", "notes": [
+ {"pitch": 50, "start": 0, "duration": 5, "velocity": 55},
+ {"pitch": 55, "start": 6, "duration": 3, "velocity": 68},
+ {"pitch": 57, "start": 9.5, "duration": 1.5, "velocity": 74},
+ {"pitch": 60, "start": 12, "duration": 4, "velocity": 82},
+ {"pitch": 57, "start": 18, "duration": 2, "velocity": 66},
+ {"pitch": 53, "start": 21, "duration": 3, "velocity": 58},
+ {"pitch": 52, "start": 25, "duration": 1, "velocity": 50},
+ {"pitch": 50, "start": 27, "duration": 4.5, "velocity": 45}]}"""
+
+
+class OllamaComposer:
+    """Runs a local model through Ollama (https://ollama.com). Free and offline."""
+
+    def __init__(self, model: str = DEFAULT_OLLAMA_MODEL, url: str = OLLAMA_URL):
+        self.model = model
+        self.url = url
+
+    def compose(self, s: Settings, previous: Phrase | None) -> Phrase:
+        body = {
+            "model": self.model,
+            "stream": False,
+            # Ollama constrains the output to this JSON schema.
+            "format": PHRASE_SCHEMA,
+            "options": {"temperature": 0.8},
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT + "\n" + OLLAMA_EXAMPLE},
+                {"role": "user", "content": _user_prompt(s, previous)},
+            ],
+        }
+        req = urllib.request.Request(
+            f"{self.url}/api/chat",
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                reply = json.load(resp)
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode(errors="replace")
+            if e.code == 404:
+                raise RuntimeError(f"Ollama doesn't have {self.model!r}. Run: ollama pull {self.model}")
+            raise RuntimeError(f"Ollama error {e.code}: {detail}")
+        except urllib.error.URLError:
+            raise RuntimeError(f"Couldn't reach Ollama at {self.url} - is the Ollama app running?")
+
+        try:
+            return _parse_phrase(reply["message"]["content"])
+        except (KeyError, TypeError, ValueError) as e:
+            raise RuntimeError(f"{self.model} returned an unusable phrase ({e}); try again or another model.")
 
 
 class MockComposer:

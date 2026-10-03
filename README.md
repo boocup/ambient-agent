@@ -57,6 +57,9 @@ python ambient_agent.py --list-ports
 # Try it without hardware or an API key
 python ambient_agent.py --mock --dry-run
 
+# Free and offline: compose with a local model via Ollama
+python ambient_agent.py --ollama --port DIN --loop
+
 # One phrase from Claude, printed instead of played
 python ambient_agent.py --dry-run
 
@@ -97,6 +100,7 @@ appear an octave lower than this script names them; the MIDI numbers match.
 | `--loop` | off | Keep composing and playing |
 | `--phrases N` | 0 (forever) | With `--loop`, stop after N phrases |
 | `--dry-run` | off | Print gate on/off events instead of sending MIDI |
+| `--ollama [MODEL]` | off | Compose with a local model via Ollama (default `qwen2.5:7b`) |
 | `--mock` | off | Offline composer, no API calls |
 | `--seed N` | | Random seed for `--mock` |
 | `--save FILE.mid` | | Write everything played to a MIDI file |
@@ -130,6 +134,21 @@ before anything is played (`music.py`, `clean_phrase`):
 - Requests opt into the API's server-side refusal fallback. It's very unlikely
   to matter for music, but it means a declined request is retried on another
   model instead of failing.
+
+## Running locally with Ollama
+
+No API key or internet needed. Install [Ollama](https://ollama.com), make sure
+it's running, then download a model once (about 4.7 GB):
+
+```bash
+ollama pull qwen2.5:7b
+python ambient_agent.py --ollama --port DIN --loop
+```
+
+Any Ollama model works: `--ollama llama3.1:8b`. On an M1 with 16 GB a
+7B model takes about 20 seconds per phrase, which stays ahead of playback at
+the default 32 beats / 60 BPM. The phrases are simpler than Claude's but
+still develop from one to the next.
 
 ## License
 
