@@ -35,9 +35,10 @@ def parse_args(argv=None):
     p.add_argument("--bpm", type=float, default=60.0, help="tempo")
     p.add_argument("--beats", type=float, default=32.0, help="phrase length in beats")
     p.add_argument("--style", default="", help="mood hints for Claude, e.g. 'misty, sparse, hopeful'")
-    p.add_argument("--loop", action="store_true",
+    p.add_argument("--continuous", action="store_true",
                    help="keep going: compose the next phrase while the current one plays")
-    p.add_argument("--phrases", type=int, default=0, help="with --loop, stop after this many (0 = forever)")
+    p.add_argument("--loop", action="store_true", dest="continuous", help=argparse.SUPPRESS)  # old name
+    p.add_argument("--phrases", type=int, default=0, help="with --continuous, stop after this many (0 = forever)")
     p.add_argument("--dry-run", action="store_true", help="print notes instead of sending MIDI")
     p.add_argument("--mock", action="store_true", help="don't call the API; use a simple offline composer")
     p.add_argument("--ollama", nargs="?", const=DEFAULT_OLLAMA_MODEL, metavar="MODEL",
@@ -143,7 +144,7 @@ def main(argv=None) -> int:
         while True:
             print(f"\nPhrase {n}: {current.intent}")
             print(format_phrase(current.notes))
-            more = args.loop and (args.phrases == 0 or n < args.phrases)
+            more = args.continuous and (args.phrases == 0 or n < args.phrases)
             upcoming = Background(compose, current) if more else None
             player.play(current.notes, settings.beats)
             played.append(current)

@@ -13,7 +13,7 @@ Mac  ->  iConnectivity iConnectAUDIO2+  ->  MIDI bus  ->  Arturia MicroFreak (ch
 
 Each phrase comes back from Claude as structured JSON (pitch, start beat,
 duration, velocity). The script cleans it up for a single voice and plays it
-in real time. With `--loop`, the next phrase is composed while the current one
+in real time. With `--continuous`, the next phrase is composed while the current one
 plays, each developing from the last.
 
 ## Setup
@@ -58,19 +58,19 @@ python ambient_agent.py --list-ports
 python ambient_agent.py --mock --dry-run
 
 # Free and offline: compose with a local model via Ollama
-python ambient_agent.py --ollama --port DIN --loop
+python ambient_agent.py --ollama --port DIN --continuous
 
 # One phrase from Claude, printed instead of played
 python ambient_agent.py --dry-run
 
 # Play live, forever, each phrase developing from the last
-python ambient_agent.py --port DIN --loop
+python ambient_agent.py --port DIN --continuous
 
 # Same, to a synth listening on channel 7
-python ambient_agent.py --port DIN --channel 7 --loop
+python ambient_agent.py --port DIN --channel 7 --continuous
 
 # Change the mood and key, and keep a recording
-python ambient_agent.py --port DIN --loop --key "A aeolian" --style "misty, sparse, distant bells" --save session.mid
+python ambient_agent.py --port DIN --continuous --key "A aeolian" --style "misty, sparse, distant bells" --save session.mid
 ```
 
 `--port` takes the full output name or any unique part of it. With the
@@ -97,8 +97,8 @@ appear an octave lower than this script names them; the MIDI numbers match.
 | `--bpm` | 60 | Tempo |
 | `--beats` | 32 | Phrase length in beats |
 | `--style "TEXT"` | | Mood hints passed to Claude |
-| `--loop` | off | Keep composing and playing |
-| `--phrases N` | 0 (forever) | With `--loop`, stop after N phrases |
+| `--continuous` | off | Keep composing and playing |
+| `--phrases N` | 0 (forever) | With `--continuous`, stop after N phrases |
 | `--dry-run` | off | Print gate on/off events instead of sending MIDI |
 | `--ollama [MODEL]` | off | Compose with a local model via Ollama (default `qwen2.5:7b`) |
 | `--mock` | off | Offline composer, no API calls |
@@ -128,7 +128,7 @@ before anything is played (`music.py`, `clean_phrase`):
 ## Notes
 
 - Each phrase is one API call with `claude-sonnet-5-5` at medium effort. At
-  the defaults (32 beats at 60 BPM) that's about two calls a minute in `--loop`.
+  the defaults (32 beats at 60 BPM) that's about two calls a minute in `--continuous`.
 - If composing ever takes longer than a phrase plays, playback waits for it
   (the script says so).
 - Requests opt into the API's server-side refusal fallback. It's very unlikely
@@ -142,7 +142,7 @@ it's running, then download a model once (about 4.7 GB):
 
 ```bash
 ollama pull qwen2.5:7b
-python ambient_agent.py --ollama --port DIN --loop
+python ambient_agent.py --ollama --port DIN --continuous
 ```
 
 Any Ollama model works: `--ollama llama3.1:8b`. On an M1 with 16 GB a
