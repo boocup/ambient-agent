@@ -14,9 +14,9 @@ def output_names() -> list[str]:
     return mido.get_output_names()
 
 
-def find_port(name: str) -> str:
-    """Pick an output by exact name, or by a unique case-insensitive substring."""
-    names = output_names()
+def find_port(name: str, names: list[str] | None = None, kind: str = "output") -> str:
+    """Pick a port by exact name, or by a unique case-insensitive substring."""
+    names = output_names() if names is None else names
     if name in names:
         return name
     matches = [n for n in names if name.lower() in n.lower()]
@@ -24,7 +24,7 @@ def find_port(name: str) -> str:
         return matches[0]
     available = "\n  ".join(names) or "(none)"
     if not matches:
-        raise SystemExit(f"No MIDI output matches {name!r}. Available:\n  {available}")
+        raise SystemExit(f"No MIDI {kind} matches {name!r}. Available:\n  {available}")
     raise SystemExit(f"{name!r} matches several outputs - be more specific:\n  " + "\n  ".join(matches))
 
 

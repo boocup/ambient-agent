@@ -35,6 +35,7 @@ class Settings:
     beats: float         # phrase length
     style: str           # free-text mood hints, may be empty
     tracks: list[Track]  # one monophonic voice each
+    note: str = ""       # one-off instruction for this phrase (e.g. a key change)
 
 
 @dataclass
@@ -117,6 +118,8 @@ def _settings_text(s: Settings) -> str:
         )
     if s.style:
         lines.append(f"\nMood / style hints: {s.style}")
+    if s.note:
+        lines.append(f"\nFor this phrase: {s.note}")
     return "\n".join(lines)
 
 

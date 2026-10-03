@@ -7,6 +7,7 @@ Mac -> USB MIDI interface -> synths / MIDI-to-CV modules, one monophonic voice p
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import os
 import re
 import signal
@@ -18,7 +19,8 @@ import mido
 
 from composer import (DEFAULT_MODEL, DEFAULT_OLLAMA_MODEL, ClaudeComposer, MockComposer,
                       OllamaComposer, Phrase, Settings, Track)
-from music import clean_phrase, format_phrase, note_name, parse_key, parse_note, scale_pitches
+from feedback import FeedbackListener
+from music import NOTE_NAMES, clean_phrase, format_phrase, note_name, parse_key, parse_note, scale_pitches
 from player import DryRunPort, Player, find_port, output_names, save_midi
 
 
@@ -50,6 +52,15 @@ def parse_args(argv=None):
     p.add_argument("--seed", type=int, help="random seed for --mock")
     p.add_argument("--save", metavar="FILE.mid", help="also write everything played to a MIDI file")
     p.add_argument("--model", default=DEFAULT_MODEL, help="Claude model ID")
+    p.add_argument("--feedback", metavar="PORT:CH:CC",
+                   help="listen to a CC from the rack, e.g. DIN:15:3 (input port, channel, CC number)")
+    p.add_argument("--peak", type=int, default=91,
+                   help="with --feedback: a CC value at or above this triggers a one-phrase key change")
+    p.add_argument("--peak-key", metavar="'ROOT MODE'",
+                   help="key for the peak excursion (default: up a fifth, same mode)")
+    p.add_argument("--peak-cooldown", type=int, default=3,
+                   help="ignore new peaks for this many phrases after a key change")
+    p.add_argument("--feedback-debug", action="store_true", help="print every feedback CC value received")
     args = p.parse_args(argv)
 
     if args.mock and args.ollama:
@@ -86,6 +97,28 @@ class Background:
 
 _NOTE = r"[A-Ga-g][#b]?-?\d+"
 _TRACK = re.compile(rf"(\d+)(?::([A-Za-z][A-Za-z0-9_]*))?(?::({_NOTE})-({_NOTE}))?")
+
+
+def key_name(root: int, mode: str) -> str:
+    return f"{NOTE_NAMES[root]} {mode}"
+
+
+def in_key(tracks: list[Track], root: int, mode: str) -> list[Track]:
+    """The same tracks with their allowed notes recomputed for another key."""
+    return [dataclasses.replace(t, scale=scale_pitches(root, mode, t.low, t.high)) for t in tracks]
+
+
+def open_feedback(spec: str, peak: int, debug: bool) -> FeedbackListener:
+    try:
+        port, channel, cc = spec.rsplit(":", 2)
+        channel, cc = int(channel), int(cc)
+    except ValueError:
+        raise SystemExit(f"Can't read --feedback {spec!r}. Use PORT:CHANNEL:CC, e.g. DIN:15:3")
+    if not 1 <= channel <= 16 or not 0 <= cc <= 127:
+        raise SystemExit("--feedback: channel must be 1-16 and CC 0-127")
+    name = find_port(port, mido.get_input_names(), kind="input")
+    print(f"Feedback: CC{cc} on channel {channel} from {name}; key change at >= {peak}")
+    return FeedbackListener(name, channel, cc, peak=peak, debug=debug)
 
 
 def build_tracks(args, root: int, mode: str) -> list[Track]:
@@ -131,9 +164,19 @@ def main(argv=None) -> int:
     try:
         root, mode = parse_key(args.key)
         tracks = build_tracks(args, root, mode)
+        peak_root, peak_mode = parse_key(args.peak_key) if args.peak_key else ((root + 7) % 12, mode)
     except ValueError as e:
         raise SystemExit(str(e))
     settings = Settings(root, mode, args.bpm, args.beats, args.style, tracks)
+    home, excursion = key_name(root, mode), key_name(peak_root, peak_mode)
+    excursion_settings = dataclasses.replace(
+        settings, root=peak_root, mode=peak_mode, tracks=in_key(tracks, peak_root, peak_mode),
+        note=(f"the modular rack just peaked, so this one phrase modulates to {excursion} "
+              f"(home key is {home}). Make the shift feel deliberate - a lift or a shaft of light."),
+    )
+    return_settings = dataclasses.replace(
+        settings, note=f"the previous phrase was a one-phrase excursion to {excursion}; settle back home into {home}.",
+    )
 
     if args.dry_run:
         port, port_label = DryRunPort(), "dry run (printing only)"
@@ -165,36 +208,65 @@ def main(argv=None) -> int:
         print(f"  {t.name}: channel {t.channel}, {note_name(t.low)}-{note_name(t.high)}")
     print(f"{args.key}, {args.bpm:g} BPM, {args.beats:g}-beat phrases"
           + (f", style: {args.style}" if args.style else ""))
-    print(f"Composer: {composer_label}. Ctrl+C to stop.\n")
+    print(f"Composer: {composer_label}. Ctrl+C to stop.")
+    feedback = open_feedback(args.feedback, args.peak, args.feedback_debug) if args.feedback else None
+    print()
 
-    def compose(previous: Phrase | None) -> Phrase:
-        phrase = composer.compose(settings, previous)
-        for t in tracks:
-            phrase.parts[t.name] = clean_phrase(phrase.parts.get(t.name, []), settings.beats, t.scale)
+    def compose(previous: Phrase | None, s: Settings) -> Phrase:
+        phrase = composer.compose(s, previous)
+        for t in s.tracks:
+            phrase.parts[t.name] = clean_phrase(phrase.parts.get(t.name, []), s.beats, t.scale)
         return phrase
+
+    cooldown = 0
+
+    def next_settings(n_next: int, current_is_excursion: bool) -> Settings:
+        """Pick the key for the phrase about to be composed, from what the rack did last phrase."""
+        nonlocal cooldown
+        if feedback is None:
+            return settings
+        window = feedback.take_window()
+        print(f"  [feedback] last phrase: {window.describe()}")
+        cooldown = max(0, cooldown - 1)
+        if current_is_excursion:
+            print(f"  [key] phrase {n_next} returns home to {home}")
+            return return_settings
+        if window.high is not None and window.high >= args.peak:
+            if cooldown:
+                print(f"  [key] peak {window.high} ignored - cooldown, {cooldown} more phrase(s)")
+                return settings
+            cooldown = args.peak_cooldown + 1
+            print(f"  [key] peak {window.high} >= {args.peak}: phrase {n_next} will be in {excursion}")
+            return excursion_settings
+        return settings
 
     def channel_parts(phrase: Phrase) -> list[tuple[int, list]]:
         return [(t.channel - 1, phrase.parts[t.name]) for t in tracks]
 
     try:
         print("Composing...")
-        current = Background(compose, None).get()
+        current = Background(compose, None, settings).get()
+        current_settings = settings
         n = 1
         while True:
-            print(f"\nPhrase {n}: {current.intent}")
+            key_tag = f" [{excursion}]" if current_settings is excursion_settings else ""
+            print(f"\nPhrase {n}{key_tag}: {current.intent}")
             for t in tracks:
                 if len(tracks) > 1:
                     print(f"  {t.name} (ch {t.channel}):")
                 print(format_phrase(current.parts[t.name]))
             more = args.continuous and (args.phrases == 0 or n < args.phrases)
-            upcoming = Background(compose, current) if more else None
+            upcoming = upcoming_settings = None
+            if more:
+                upcoming_settings = next_settings(n + 1, current_settings is excursion_settings)
+                upcoming = Background(compose, current, upcoming_settings)
             player.play(channel_parts(current), settings.beats)
             played.append(current)
             if upcoming is None:
                 break
             if upcoming.thread.is_alive():
                 print("(still composing the next phrase...)")
-            current = upcoming.get()
+            current, current_settings = upcoming.get(), upcoming_settings
             n += 1
     except KeyboardInterrupt:
         print("\nStopping.")
@@ -213,6 +285,8 @@ def main(argv=None) -> int:
     finally:
         player.panic()
         port.close()
+        if feedback:
+            feedback.close()
         if args.save and played:
             save_midi(args.save, [channel_parts(p) for p in played], settings.beats, args.bpm)
             print(f"Saved {len(played)} phrase(s) to {args.save}")

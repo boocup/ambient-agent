@@ -109,6 +109,11 @@ appear an octave lower than this script names them; the MIDI numbers match.
 | `--seed N` | | Random seed for `--mock` |
 | `--save FILE.mid` | | Write everything played to a MIDI file |
 | `--model` | `claude-sonnet-5-5` | Claude model ID |
+| `--feedback PORT:CH:CC` | | Listen to a CC from the rack, e.g. `DIN:15:3` |
+| `--peak N` | 91 | With `--feedback`: a CC value at or above this triggers a one-phrase key change |
+| `--peak-key "ROOT MODE"` | up a fifth | Key for the excursion |
+| `--peak-cooldown N` | 3 | Ignore new peaks for N phrases after a key change |
+| `--feedback-debug` | off | Print every feedback CC value |
 
 ## Multiple tracks
 
@@ -122,6 +127,31 @@ the local 7B model on an M1, two tracks take about 37 seconds per 32-beat
 phrase; use `--bpm 50` or `--beats 48` so playback stays ahead.
 
 `--save` writes one MIDI track per channel.
+
+## Feedback from the rack: key change on a peak
+
+An envelope follower in the rack can steer the agent. Get its CV to the Mac
+as a MIDI CC - for example Envelope follower → Mordax (scale to 0-5 V) →
+Hapax CV in → mod matrix → CC 3 on channel 15 → iConnect DIN in - then:
+
+```bash
+python ambient_agent.py --ollama --port DIN --continuous --bpm 40 \
+  --track 8:melody:C3-C5 --track 9:bass:C1-C3 --feedback DIN:15:3 --peak 91
+```
+
+When the CC reaches 91 or more during a phrase, a later phrase modulates for
+one phrase (default: up a fifth, so D dorian → A dorian) and the next one
+returns home. Because each phrase is composed while the previous one plays,
+the change lands one phrase after the peak is heard. Debug lines show it
+happening:
+
+```
+  [feedback   3.54s] PEAK: CC3 = 95 (>= 91)
+  [feedback] last phrase: 12 msgs, min 80, avg 88, max 95
+  [key] peak 95 >= 91: phrase 4 will be in A dorian
+Phrase 4 [A dorian]: ...
+  [key] phrase 5 returns home to D dorian
+```
 
 ## How notes are cleaned up
 
@@ -141,6 +171,7 @@ before anything is played (`music.py`, `clean_phrase`):
 - `composer.py` - Claude composer (structured JSON output) and the mock composer
 - `player.py` - MIDI port selection, real-time playback, panic, `.mid` export
 - `music.py` - note names, scales, phrase cleanup
+- `feedback.py` - listens for a CC from the rack and summarizes it per phrase
 
 ## Notes
 
