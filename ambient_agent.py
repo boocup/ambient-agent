@@ -64,8 +64,9 @@ def parse_args(argv=None):
                    help="with --key-change: key for the excursion (default: up a fifth, same mode)")
     p.add_argument("--peak-cooldown", type=int, default=3,
                    help="with --key-change: ignore new peaks for this many phrases after a key change")
-    p.add_argument("--peak-out", metavar="CH:CC", default="15:20",
-                   help="with --feedback: on each peak, pulse this CC (127, then 0) out --port for the rack; 'off' to disable")
+    p.add_argument("--peak-out", metavar="CH:CC[:LEVEL]", default="15:20:64",
+                   help="with --feedback: on each peak, pulse this CC to LEVEL (1-127, then back to 0) out --port "
+                        "for the rack; in VCV's MIDI CC->CV, 64 is about 5 V. 'off' to disable")
     p.add_argument("--feedback-debug", action="store_true", help="print every feedback CC value received")
     args = p.parse_args(argv)
 
@@ -117,17 +118,21 @@ def in_key(tracks: list[Track], root: int, mode: str) -> list[Track]:
 PULSE_SECONDS = 0.1
 
 
-def parse_peak_out(spec: str) -> tuple[int, int] | None:
-    """'15:20' -> (14, 20): 0-based channel and CC number, or None for 'off'."""
+def parse_peak_out(spec: str) -> tuple[int, int, int] | None:
+    """'15:20:64' -> (14, 20, 64): 0-based channel, CC number, pulse level; None for 'off'."""
     if spec.lower() == "off":
         return None
     try:
-        channel, cc = (int(x) for x in spec.split(":"))
-    except ValueError:
-        raise SystemExit(f"Can't read --peak-out {spec!r}. Use CH:CC, e.g. 15:20, or 'off'")
-    if not 1 <= channel <= 16 or not 0 <= cc <= 127:
-        raise SystemExit("--peak-out: channel must be 1-16 and CC 0-127")
-    return channel - 1, cc
+        parts = [int(x) for x in spec.split(":")]
+        channel, cc = parts[0], parts[1]
+        level = parts[2] if len(parts) == 3 else 127
+        if len(parts) > 3:
+            raise ValueError
+    except (ValueError, IndexError):
+        raise SystemExit(f"Can't read --peak-out {spec!r}. Use CH:CC or CH:CC:LEVEL, e.g. 15:20:64, or 'off'")
+    if not 1 <= channel <= 16 or not 0 <= cc <= 127 or not 1 <= level <= 127:
+        raise SystemExit("--peak-out: channel must be 1-16, CC 0-127, level 1-127")
+    return channel - 1, cc, level
 
 
 def open_feedback(spec: str, peak: int, debug: bool, key_change: bool, on_peak=None) -> FeedbackListener:
@@ -238,8 +243,8 @@ def main(argv=None) -> int:
 
     def pulse_peak_out(value: int):
         """Tell the rack a peak happened: CC high now, back to 0 shortly after."""
-        out_channel, out_cc = peak_out
-        player.send_cc(out_channel, out_cc, 127)
+        out_channel, out_cc, level = peak_out
+        player.send_cc(out_channel, out_cc, level)
         threading.Timer(PULSE_SECONDS, player.send_cc, (out_channel, out_cc, 0)).start()
         print(f"  [feedback] -> pulsed CC{out_cc} on channel {out_channel + 1}")
 
@@ -247,7 +252,8 @@ def main(argv=None) -> int:
                               on_peak=pulse_peak_out if peak_out else None)
                 if args.feedback else None)
     if peak_out:
-        print(f"Peak out: CC{peak_out[1]} pulse on channel {peak_out[0] + 1} via {port_label}")
+        print(f"Peak out: CC{peak_out[1]} pulse to {peak_out[2]} (~{peak_out[2] * 10 / 127:.1f} V in VCV) "
+              f"on channel {peak_out[0] + 1} via {port_label}")
     print()
 
     def compose(previous: Phrase | None, s: Settings) -> Phrase:

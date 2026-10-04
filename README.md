@@ -114,7 +114,7 @@ appear an octave lower than this script names them; the MIDI numbers match.
 | `--key-change` | off | Also move to `--peak-key` for one phrase after a peak |
 | `--peak-key "ROOT MODE"` | up a fifth | With `--key-change`: key for the excursion |
 | `--peak-cooldown N` | 3 | With `--key-change`: ignore new peaks for N phrases after a key change |
-| `--peak-out CH:CC` | `15:20` | On each peak, pulse this CC (127, then 0 after 100 ms) out `--port` for the rack; `off` to disable |
+| `--peak-out CH:CC[:LEVEL]` | `15:20:64` | On each peak, pulse this CC to LEVEL, then 0 after 100 ms, out `--port` for the rack (64 ≈ 5 V in VCV's MIDI CC→CV); `off` to disable |
 | `--feedback-debug` | off | Print every feedback CC value |
 
 ## Multiple tracks
@@ -165,7 +165,9 @@ Phrase 4 [A dorian]: ...
 ### Peak pulse back to the rack
 
 Each peak also sends a short pulse out `--port`: CC 20 on channel 15 jumps to
-127 and returns to 0 after 100 ms. In the rack, a MIDI-to-CV module mapped to
+64 and returns to 0 after 100 ms. VCV's MIDI CC→CV maps 0-127 to 0-10 V, so
+64 gives a ~5 V trigger; a Doepfer A-151 stepped on both edges of a full 10 V
+pulse, so set the level with the third number, e.g. `--peak-out 15:20:50`. In the rack, a MIDI-to-CV module mapped to
 that CC turns it into a trigger. It fires once per phrase at the moment of
 the peak, independent of the key-change cooldown. Change it with
 `--peak-out 15:21`, or turn it off with `--peak-out off`.
