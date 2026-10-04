@@ -96,7 +96,7 @@ appear an octave lower than this script names them; the MIDI numbers match.
 | `--port NAME` | | MIDI output (full name or unique part) |
 | `--channel N` | 8 | MIDI channel, 1-16 (single track) |
 | `--track CH[:NAME[:LOW-HIGH]]` | | Add a voice, e.g. `7:melody` or `12:bass:C1-C3`. Repeat for more; replaces `--channel` |
-| `--key "ROOT MODE"` | `D dorian` | Modes: ionian/major, dorian, phrygian, lydian, mixolydian, aeolian/minor, locrian, major-pentatonic, minor-pentatonic |
+| `--key "ROOT MODE"` | `D dorian` | Root like `D`, `Bb` or `F#` (flat keys are spelled with flats). Modes: ionian/major, dorian, phrygian, lydian, mixolydian, aeolian/minor, locrian, major-pentatonic, minor-pentatonic |
 | `--low`, `--high` | `C2`, `C5` | Note range (C4 = middle C = MIDI 60); the default for every track |
 | `--bpm` | 60 | Tempo |
 | `--beats` | 32 | Phrase length in beats |
@@ -110,9 +110,10 @@ appear an octave lower than this script names them; the MIDI numbers match.
 | `--save FILE.mid` | | Write everything played to a MIDI file |
 | `--model` | `claude-sonnet-5-5` | Claude model ID |
 | `--feedback PORT:CH:CC` | | Listen to a CC from the rack, e.g. `DIN:15:3` |
-| `--peak N` | 91 | With `--feedback`: a CC value at or above this triggers a one-phrase key change |
-| `--peak-key "ROOT MODE"` | up a fifth | Key for the excursion |
-| `--peak-cooldown N` | 3 | Ignore new peaks for N phrases after a key change |
+| `--peak N` | 91 | With `--feedback`: a CC value at or above this counts as a peak |
+| `--key-change` | off | Also move to `--peak-key` for one phrase after a peak |
+| `--peak-key "ROOT MODE"` | up a fifth | With `--key-change`: key for the excursion |
+| `--peak-cooldown N` | 3 | With `--key-change`: ignore new peaks for N phrases after a key change |
 | `--peak-out CH:CC` | `15:20` | On each peak, pulse this CC (127, then 0 after 100 ms) out `--port` for the rack; `off` to disable |
 | `--feedback-debug` | off | Print every feedback CC value |
 
@@ -129,22 +130,29 @@ phrase; use `--bpm 50` or `--beats 48` so playback stays ahead.
 
 `--save` writes one MIDI track per channel.
 
-## Feedback from the rack: key change on a peak
+## Feedback from the rack
 
 An envelope follower in the rack can steer the agent. Get its CV to the Mac
 as a MIDI CC - for example Envelope follower → Mordax (scale to 0-5 V) →
 Hapax CV in → mod matrix → CC 3 on channel 15 → Hapax USB to the Mac - then:
 
 ```bash
-python ambient_agent.py --ollama --port DIN --continuous --bpm 40 \
+python ambient_agent.py --ollama --port DIN --continuous --bpm 40 --key "Bb minor-pentatonic" \
   --track 8:melody:C3-C5 --track 9:bass:C1-C3 --feedback HAPAX:15:3 --peak 91
 ```
 
-When the CC reaches 91 or more during a phrase, a later phrase modulates for
-one phrase (default: up a fifth, so D dorian → A dorian) and the next one
+A CC value of 91 or more is a peak. By default a peak only sends the pulse
+below, so the rack decides what happens (e.g. a quantizer's shift input);
+the agent stays in its key.
+
+### Optional: key change in the agent
+
+With `--key-change`, a peak also makes a later phrase modulate for one
+phrase (default: up a fifth, so D dorian → A dorian) and the next one
 returns home. Because each phrase is composed while the previous one plays,
-the change lands one phrase after the peak is heard. Debug lines show it
-happening:
+the change lands one phrase after the peak is heard. Don't combine this with
+a quantizer that also shifts on the pulse, or the two transpositions stack.
+Debug lines show it happening:
 
 ```
   [feedback   3.54s] PEAK: CC3 = 95 (>= 91)

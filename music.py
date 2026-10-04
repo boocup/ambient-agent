@@ -6,7 +6,22 @@ import re
 from dataclasses import dataclass, asdict
 
 NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-_FLATS = {"Db": "C#", "Eb": "D#", "Gb": "F#", "Ab": "G#", "Bb": "A#"}
+FLAT_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"]
+_FLATS = {flat: sharp for flat, sharp in zip(FLAT_NAMES, NOTE_NAMES) if flat != sharp}
+
+# Spell black keys with flats (Bb, Eb...) instead of sharps; set by use_flats().
+_spell_flats = False
+
+
+def use_flats(flats: bool):
+    """Choose how notes are spelled everywhere (display and prompts)."""
+    global _spell_flats
+    _spell_flats = flats
+
+
+def pc_name(pc: int) -> str:
+    """Pitch class 0-11 -> 'Bb' or 'A#', per use_flats()."""
+    return (FLAT_NAMES if _spell_flats else NOTE_NAMES)[pc % 12]
 
 # Semitone intervals from the root.
 MODES = {
@@ -55,7 +70,7 @@ def parse_note(name: str) -> int:
 
 
 def note_name(pitch: int) -> str:
-    return f"{NOTE_NAMES[pitch % 12]}{pitch // 12 - 1}"
+    return f"{pc_name(pitch)}{pitch // 12 - 1}"
 
 
 def parse_key(key: str) -> tuple[int, str]:

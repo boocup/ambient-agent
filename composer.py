@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 import anthropic
 
-from music import NOTE_NAMES, Note, note_name
+from music import Note, note_name, pc_name
 
 
 DEFAULT_MODEL = "claude-sonnet-5-5"
@@ -103,7 +103,7 @@ phrases sound like one evolving piece."""
 
 def _settings_text(s: Settings) -> str:
     lines = [
-        f"Key: {NOTE_NAMES[s.root]} {s.mode}",
+        f"Key: {pc_name(s.root)} {s.mode}",
         f"Tempo: {s.bpm:g} BPM",
         f"Phrase length: {s.beats:g} beats. Every note must start at or after beat 0 "
         f"and end by beat {s.beats:g}.",

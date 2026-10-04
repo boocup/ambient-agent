@@ -21,7 +21,7 @@ import mido
 from composer import (DEFAULT_MODEL, DEFAULT_OLLAMA_MODEL, ClaudeComposer, MockComposer,
                       OllamaComposer, Phrase, Settings, Track)
 from feedback import FeedbackListener
-from music import NOTE_NAMES, clean_phrase, format_phrase, note_name, parse_key, parse_note, scale_pitches
+from music import clean_phrase, format_phrase, note_name, parse_key, parse_note, pc_name, scale_pitches, use_flats
 from player import DryRunPort, Player, find_port, output_names, save_midi
 
 
@@ -56,11 +56,14 @@ def parse_args(argv=None):
     p.add_argument("--feedback", metavar="PORT:CH:CC",
                    help="listen to a CC from the rack, e.g. DIN:15:3 (input port, channel, CC number)")
     p.add_argument("--peak", type=int, default=91,
-                   help="with --feedback: a CC value at or above this triggers a one-phrase key change")
+                   help="with --feedback: a CC value at or above this counts as a peak (pulses --peak-out)")
+    p.add_argument("--key-change", action="store_true",
+                   help="with --feedback: also move to --peak-key for one phrase after a peak "
+                        "(off by default - leave key changes to the rack's quantizers)")
     p.add_argument("--peak-key", metavar="'ROOT MODE'",
-                   help="key for the peak excursion (default: up a fifth, same mode)")
+                   help="with --key-change: key for the excursion (default: up a fifth, same mode)")
     p.add_argument("--peak-cooldown", type=int, default=3,
-                   help="ignore new peaks for this many phrases after a key change")
+                   help="with --key-change: ignore new peaks for this many phrases after a key change")
     p.add_argument("--peak-out", metavar="CH:CC", default="15:20",
                    help="with --feedback: on each peak, pulse this CC (127, then 0) out --port for the rack; 'off' to disable")
     p.add_argument("--feedback-debug", action="store_true", help="print every feedback CC value received")
@@ -103,7 +106,7 @@ _TRACK = re.compile(rf"(\d+)(?::([A-Za-z][A-Za-z0-9_]*))?(?::({_NOTE})-({_NOTE})
 
 
 def key_name(root: int, mode: str) -> str:
-    return f"{NOTE_NAMES[root]} {mode}"
+    return f"{pc_name(root)} {mode}"
 
 
 def in_key(tracks: list[Track], root: int, mode: str) -> list[Track]:
@@ -127,7 +130,7 @@ def parse_peak_out(spec: str) -> tuple[int, int] | None:
     return channel - 1, cc
 
 
-def open_feedback(spec: str, peak: int, debug: bool, on_peak=None) -> FeedbackListener:
+def open_feedback(spec: str, peak: int, debug: bool, key_change: bool, on_peak=None) -> FeedbackListener:
     try:
         port, channel, cc = spec.rsplit(":", 2)
         channel, cc = int(channel), int(cc)
@@ -136,7 +139,8 @@ def open_feedback(spec: str, peak: int, debug: bool, on_peak=None) -> FeedbackLi
     if not 1 <= channel <= 16 or not 0 <= cc <= 127:
         raise SystemExit("--feedback: channel must be 1-16 and CC 0-127")
     name = find_port(port, mido.get_input_names(), kind="input")
-    print(f"Feedback: CC{cc} on channel {channel} from {name}; key change at >= {peak}")
+    print(f"Feedback: CC{cc} on channel {channel} from {name}; peak at >= {peak}"
+          + ("; one-phrase key change on peaks" if key_change else "; key changes off"))
     return FeedbackListener(name, channel, cc, peak=peak, debug=debug, on_peak=on_peak)
 
 
@@ -180,6 +184,8 @@ def main(argv=None) -> int:
             print(f"  {n}")
         return 0
 
+    # Spell notes the way the key was written: 'Bb ...' -> flats, 'A# ...' -> sharps.
+    use_flats(args.key.strip()[1:2] == "b")
     try:
         root, mode = parse_key(args.key)
         tracks = build_tracks(args, root, mode)
@@ -237,7 +243,7 @@ def main(argv=None) -> int:
         threading.Timer(PULSE_SECONDS, player.send_cc, (out_channel, out_cc, 0)).start()
         print(f"  [feedback] -> pulsed CC{out_cc} on channel {out_channel + 1}")
 
-    feedback = (open_feedback(args.feedback, args.peak, args.feedback_debug,
+    feedback = (open_feedback(args.feedback, args.peak, args.feedback_debug, args.key_change,
                               on_peak=pulse_peak_out if peak_out else None)
                 if args.feedback else None)
     if peak_out:
@@ -259,6 +265,8 @@ def main(argv=None) -> int:
             return settings
         window = feedback.take_window()
         print(f"  [feedback] last phrase: {window.describe()}")
+        if not args.key_change:
+            return settings
         cooldown = max(0, cooldown - 1)
         if current_is_excursion:
             print(f"  [key] phrase {n_next} returns home to {home}")
