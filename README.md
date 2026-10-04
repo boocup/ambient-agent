@@ -113,6 +113,7 @@ appear an octave lower than this script names them; the MIDI numbers match.
 | `--peak N` | 91 | With `--feedback`: a CC value at or above this triggers a one-phrase key change |
 | `--peak-key "ROOT MODE"` | up a fifth | Key for the excursion |
 | `--peak-cooldown N` | 3 | Ignore new peaks for N phrases after a key change |
+| `--peak-out CH:CC` | `15:20` | On each peak, pulse this CC (127, then 0 after 100 ms) out `--port` for the rack; `off` to disable |
 | `--feedback-debug` | off | Print every feedback CC value |
 
 ## Multiple tracks
@@ -151,6 +152,19 @@ happening:
   [key] peak 95 >= 91: phrase 4 will be in A dorian
 Phrase 4 [A dorian]: ...
   [key] phrase 5 returns home to D dorian
+```
+
+### Peak pulse back to the rack
+
+Each peak also sends a short pulse out `--port`: CC 20 on channel 15 jumps to
+127 and returns to 0 after 100 ms. In the rack, a MIDI-to-CV module mapped to
+that CC turns it into a trigger. It fires once per phrase at the moment of
+the peak, independent of the key-change cooldown. Change it with
+`--peak-out 15:21`, or turn it off with `--peak-out off`.
+
+```
+  [feedback  23.40s] PEAK: CC3 = 93 (>= 91)
+  [feedback] -> pulsed CC20 on channel 15
 ```
 
 ## How notes are cleaned up

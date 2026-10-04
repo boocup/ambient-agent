@@ -34,11 +34,13 @@ class FeedbackListener:
 
     POLL_SECONDS = 0.01
 
-    def __init__(self, port_name: str, channel: int, cc: int, peak: int | None = None, debug: bool = False):
+    def __init__(self, port_name: str, channel: int, cc: int, peak: int | None = None, debug: bool = False,
+                 on_peak=None):
         self.status = 0xB0 | (channel - 1)  # control change on this channel
         self.cc = cc
         self.peak = peak
         self.debug = debug
+        self.on_peak = on_peak  # called (from the polling thread) the first time a phrase peaks
         self._lock = threading.Lock()
         self._values: list[int] = []
         self._peak_announced = False
@@ -71,6 +73,8 @@ class FeedbackListener:
             print(f"  [feedback {t:7.2f}s] CC{self.cc} = {value}")
         if first_peak:
             print(f"  [feedback {t:7.2f}s] PEAK: CC{self.cc} = {value} (>= {self.peak})")
+            if self.on_peak:
+                self.on_peak(value)
 
     def take_window(self) -> Window:
         """Summarize everything received since the last call, and start a new window."""

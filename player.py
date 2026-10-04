@@ -43,6 +43,8 @@ class DryRunPort:
             print(f"  [{t:7.2f}s] {ch} gate off  {note_name(msg.note)}")
         elif msg.type == "control_change" and msg.control == 123:
             print(f"  [{t:7.2f}s] {ch} All Notes Off")
+        elif msg.type == "control_change":
+            print(f"  [{t:7.2f}s] {ch} CC{msg.control} = {msg.value}")
 
     def close(self):
         pass
@@ -61,6 +63,11 @@ class Player:
         with self._lock:
             self.port.send(mido.Message(msg_type, channel=channel, note=note, velocity=velocity))
             self.sounding[channel] = note if msg_type == "note_on" else None
+
+    def send_cc(self, channel: int, control: int, value: int):
+        """Send a CC on any channel (0-15), safely alongside playback."""
+        with self._lock:
+            self.port.send(mido.Message("control_change", channel=channel, control=control, value=value))
 
     def play(self, parts: list[tuple[int, list[Note]]], length_beats: float):
         """Play one phrase - (channel, notes) per voice, all together - in real time.

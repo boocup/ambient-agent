@@ -13,6 +13,7 @@ import re
 import signal
 import sys
 import threading
+import time
 
 import anthropic
 import mido
@@ -60,6 +61,8 @@ def parse_args(argv=None):
                    help="key for the peak excursion (default: up a fifth, same mode)")
     p.add_argument("--peak-cooldown", type=int, default=3,
                    help="ignore new peaks for this many phrases after a key change")
+    p.add_argument("--peak-out", metavar="CH:CC", default="15:20",
+                   help="with --feedback: on each peak, pulse this CC (127, then 0) out --port for the rack; 'off' to disable")
     p.add_argument("--feedback-debug", action="store_true", help="print every feedback CC value received")
     args = p.parse_args(argv)
 
@@ -108,7 +111,23 @@ def in_key(tracks: list[Track], root: int, mode: str) -> list[Track]:
     return [dataclasses.replace(t, scale=scale_pitches(root, mode, t.low, t.high)) for t in tracks]
 
 
-def open_feedback(spec: str, peak: int, debug: bool) -> FeedbackListener:
+PULSE_SECONDS = 0.1
+
+
+def parse_peak_out(spec: str) -> tuple[int, int] | None:
+    """'15:20' -> (14, 20): 0-based channel and CC number, or None for 'off'."""
+    if spec.lower() == "off":
+        return None
+    try:
+        channel, cc = (int(x) for x in spec.split(":"))
+    except ValueError:
+        raise SystemExit(f"Can't read --peak-out {spec!r}. Use CH:CC, e.g. 15:20, or 'off'")
+    if not 1 <= channel <= 16 or not 0 <= cc <= 127:
+        raise SystemExit("--peak-out: channel must be 1-16 and CC 0-127")
+    return channel - 1, cc
+
+
+def open_feedback(spec: str, peak: int, debug: bool, on_peak=None) -> FeedbackListener:
     try:
         port, channel, cc = spec.rsplit(":", 2)
         channel, cc = int(channel), int(cc)
@@ -118,7 +137,7 @@ def open_feedback(spec: str, peak: int, debug: bool) -> FeedbackListener:
         raise SystemExit("--feedback: channel must be 1-16 and CC 0-127")
     name = find_port(port, mido.get_input_names(), kind="input")
     print(f"Feedback: CC{cc} on channel {channel} from {name}; key change at >= {peak}")
-    return FeedbackListener(name, channel, cc, peak=peak, debug=debug)
+    return FeedbackListener(name, channel, cc, peak=peak, debug=debug, on_peak=on_peak)
 
 
 def build_tracks(args, root: int, mode: str) -> list[Track]:
@@ -209,7 +228,20 @@ def main(argv=None) -> int:
     print(f"{args.key}, {args.bpm:g} BPM, {args.beats:g}-beat phrases"
           + (f", style: {args.style}" if args.style else ""))
     print(f"Composer: {composer_label}. Ctrl+C to stop.")
-    feedback = open_feedback(args.feedback, args.peak, args.feedback_debug) if args.feedback else None
+    peak_out = parse_peak_out(args.peak_out) if args.feedback else None
+
+    def pulse_peak_out(value: int):
+        """Tell the rack a peak happened: CC high now, back to 0 shortly after."""
+        out_channel, out_cc = peak_out
+        player.send_cc(out_channel, out_cc, 127)
+        threading.Timer(PULSE_SECONDS, player.send_cc, (out_channel, out_cc, 0)).start()
+        print(f"  [feedback] -> pulsed CC{out_cc} on channel {out_channel + 1}")
+
+    feedback = (open_feedback(args.feedback, args.peak, args.feedback_debug,
+                              on_peak=pulse_peak_out if peak_out else None)
+                if args.feedback else None)
+    if peak_out:
+        print(f"Peak out: CC{peak_out[1]} pulse on channel {peak_out[0] + 1} via {port_label}")
     print()
 
     def compose(previous: Phrase | None, s: Settings) -> Phrase:
@@ -283,10 +315,13 @@ def main(argv=None) -> int:
         print(f"\n{e}", file=sys.stderr)
         return 1
     finally:
-        player.panic()
-        port.close()
         if feedback:
             feedback.close()
+        if peak_out:
+            time.sleep(PULSE_SECONDS)  # let an in-flight pulse finish before closing the port
+            player.send_cc(peak_out[0], peak_out[1], 0)  # never leave the pulse high
+        player.panic()
+        port.close()
         if args.save and played:
             save_midi(args.save, [channel_parts(p) for p in played], settings.beats, args.bpm)
             print(f"Saved {len(played)} phrase(s) to {args.save}")
