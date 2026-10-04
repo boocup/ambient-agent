@@ -239,7 +239,9 @@ def main(argv=None) -> int:
     print(f"{args.key}, {args.bpm:g} BPM, {args.beats:g}-beat phrases"
           + (f", style: {args.style}" if args.style else ""))
     print(f"Composer: {composer_label}. Ctrl+C to stop.")
-    peak_out = parse_peak_out(args.peak_out) if args.feedback else None
+    peak_out = parse_peak_out(args.peak_out)  # validate even when unused, so typos surface
+    if not args.feedback:
+        peak_out = None
 
     def pulse_peak_out(value: int):
         """Tell the rack a peak happened: CC high now, back to 0 shortly after."""

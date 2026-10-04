@@ -175,33 +175,49 @@ class ClaudeComposer:
         return _parse_phrase(text, s.tracks)
 
 
-# Small local models follow a concrete example far better than a description.
-_EXAMPLE_UPPER = [
-    {"pitch": 50, "start": 0, "duration": 5, "velocity": 55},
-    {"pitch": 55, "start": 6, "duration": 3, "velocity": 68},
-    {"pitch": 57, "start": 9.5, "duration": 1.5, "velocity": 74},
-    {"pitch": 60, "start": 12, "duration": 4, "velocity": 82},
-    {"pitch": 57, "start": 18, "duration": 2, "velocity": 66},
-    {"pitch": 53, "start": 21, "duration": 3, "velocity": 58},
-    {"pitch": 52, "start": 25, "duration": 1, "velocity": 50},
-    {"pitch": 50, "start": 27, "duration": 4.5, "velocity": 45},
+# Small local models follow a concrete example far better than a description -
+# and tend to copy it outright. So the example is freshly randomized for every
+# request: copying it still gives a different phrase each time.
+_EXAMPLE_INTENTS = [
+    "A slow rise to a held tone, then a long sigh back down",
+    "Two short calls, a long silence, and a single low answer",
+    "A drifting line that circles one note before settling lower",
+    "Wide leaps softened by long rests, ending on the root",
+    "A quiet stepwise climb that stops short and fades",
+    "A held low tone, a brief flicker above, and stillness",
 ]
-_EXAMPLE_LOWER = [
-    {"pitch": 38, "start": 0, "duration": 10, "velocity": 60},
-    {"pitch": 33, "start": 12, "duration": 6, "velocity": 55},
-    {"pitch": 36, "start": 20, "duration": 4, "velocity": 50},
-    {"pitch": 38, "start": 26, "duration": 6, "velocity": 58},
-]
+_example_rng = random.Random()
 
 
-def _ollama_example(tracks: list[Track]) -> str:
-    example = {"intent": "A low call that climbs by fourth, lingers, and falls back"}
-    for i, t in enumerate(tracks):
-        example[t.name] = _EXAMPLE_UPPER if i == 0 else _EXAMPLE_LOWER
+def _example_part(scale: list[int], beats: float, upper: bool) -> list[dict]:
+    rng = _example_rng
+    durations = [1, 1.5, 2, 3, 4, 5, 6] if upper else [4, 5, 6, 8, 10]
+    rests = [0.5, 1, 1.5, 2, 3, 4] if upper else [1, 2, 3, 4]
+    steps = [-3, -2, -1, -1, 1, 1, 2, 3] if upper else [-2, -1, 1, 2]
+    idx = rng.randrange(len(scale) // 4, max(len(scale) // 4 + 1, 3 * len(scale) // 4))
+    notes, t = [], float(rng.choice([0, 0, 1, 2]))
+    while True:
+        d = rng.choice(durations)
+        if t + d > beats:
+            break
+        notes.append({"pitch": scale[idx], "start": t, "duration": d, "velocity": rng.randint(45, 85)})
+        t += d + rng.choice(rests)
+        idx = max(0, min(len(scale) - 1, idx + rng.choice(steps)))
+    return notes
+
+
+def _ollama_example(s: Settings) -> str:
+    """Two different random examples: small models learn the pattern (uneven lengths,
+    rests, gentle contour) from a pair instead of copying a single one."""
+    examples = []
+    for intent in _example_rng.sample(_EXAMPLE_INTENTS, 2):
+        example = {"intent": intent}
+        for i, t in enumerate(s.tracks):
+            example[t.name] = _example_part(t.scale, s.beats, upper=(i == 0))
+        examples.append(json.dumps(example))
     return (
-        "\n\nExample of the shape wanted (D dorian, 32 beats) - vary note count, lengths "
-        "(1-10 beats) and rests, use each voice's own range; don't copy it:\n"
-        + json.dumps(example)
+        "\n\nTwo examples of the kind of phrase wanted - uneven note lengths, real rests, "
+        "a gentle contour. Write your own in the same spirit:\n" + "\n".join(examples)
     )
 
 
@@ -220,7 +236,7 @@ class OllamaComposer:
             "format": phrase_schema(s.tracks),
             "options": {"temperature": 0.8},
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT + _ollama_example(s.tracks)},
+                {"role": "system", "content": SYSTEM_PROMPT + _ollama_example(s)},
                 {"role": "user", "content": _user_prompt(s, previous)},
             ],
         }
