@@ -118,7 +118,42 @@ appear an octave lower than this script names them; the MIDI numbers match.
 | `--peak-key "ROOT MODE"` | up a fifth | With `--key-change`: key for the excursion |
 | `--peak-cooldown N` | 3 | With `--key-change`: ignore new peaks for N phrases after a key change |
 | `--peak-out CH:CC[:LEVEL]` | `15:20:64` | On each peak, pulse this CC to LEVEL, then 0 after 100 ms, out `--port` for the rack (64 ≈ 5 V in VCV's MIDI CC→CV); `off` to disable |
-| `--feedback-debug` | off | Print every feedback CC value |
+| `--feedback-debug` | off | Print every feedback value (CC, or ES-8 readings twice a second) |
+| `--es8` | off | Use an Expert Sleepers ES-8 directly (no Hapax, no VCV Rack); see "ES-8 direct" below |
+| `--es8-follower N` | 1 | With `--es8`: the ES-8 input carrying the envelope follower; peaks are found in it |
+| `--es8-walk N` | 2 | With `--es8`: a second input summarized every phrase, e.g. a random walk (0 = none) |
+| `--es8-out CH[:LEVEL]` | `1:0.5` | With `--es8`: the output that gets the 100 ms peak trigger, and its level as a fraction of full scale |
+| `--peak-gap SECONDS` | 0 | With `--feedback` or `--es8`: at least this long between peak triggers |
+| `--rack-state on\|off` | `on` | With `--es8`: tell the model how active the rack was and where the walk sits, as a gentle nudge |
+
+## ES-8 direct (no Hapax, no VCV Rack)
+
+An ES-8 shows up to the Mac as an ordinary audio device with DC-coupled jacks,
+so the agent can read CV from its inputs and send triggers out of its outputs
+by itself (`es8.py`, using `sounddevice`). With `--es8`:
+
+```bash
+python ambient_agent.py --port DIN --continuous --bpm 40 --key "Bb minor-pentatonic" \
+  --track 8:melody:C3-C5 --track 9:bass:C1-C3 --es8
+```
+
+- **Input 1** (`--es8-follower`) carries an envelope follower of the music. Peaks
+  are found in it the same way as in the MIDI version (`--peak auto`, or a number
+  on a 0-127 scale), and each peak sends a 100 ms trigger out **output 1**
+  (`--es8-out`). With `--peak-gap 90` that is at most one trigger per 90 s.
+- **Input 2** (`--es8-walk`) is summarized every phrase: its range, which way it
+  moved, and where it sits in its recent range.
+- With `--rack-state on` the model is told, as a gentle nudge, how active the
+  rack was and where the walk sits (a very active rack: leave space; a high
+  walk: nudge the melody up).
+- `--es8` and `--feedback` (the Hapax route) are alternatives.
+
+Voltages assume the ES-8's +-1.0 is about +-10 V; calibrate the trigger level
+with a meter or scope. The trigger level that worked for a Doepfer A-151 was
+0.5 (about 5 V); a full 10 V made it step twice. The output always returns to
+0 V, including when the program stops. The device is found by name, so its
+number in the system's audio list doesn't matter. Per-phrase log lines show
+`audio glitch(es)` if the Mac was ever too busy to keep the audio steady.
 
 ## Keeping long sessions from repeating (form)
 
@@ -233,6 +268,7 @@ before anything is played (`music.py`, `clean_phrase`):
 - `player.py` - MIDI port selection, real-time playback, panic, `.mid` export
 - `music.py` - note names, scales, phrase cleanup
 - `feedback.py` - listens for a CC from the rack and summarizes it per phrase
+- `es8.py` - reads CV from an ES-8's inputs and sends triggers out of its outputs
 - `form.py` - sections, register windows, phrase memory and the novelty score
 
 ## Notes

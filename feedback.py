@@ -19,12 +19,15 @@ class Window:
     average: float | None
     peaks: int = 0
     marks: str = ""  # how the peak level was set, for the log line
+    extra: str = ""  # anything else worth logging (e.g. the ES-8 walk input)
+    hint: str = ""   # a sentence for the model about what the rack did (see es8.ES8Feedback)
 
     def describe(self) -> str:
         if not self.count:
-            return "no CC received"
+            return "no CC received" if not self.extra else self.extra
         text = f"{self.count} msgs, min {self.low}, avg {self.average:.0f}, max {self.high}, peaks {self.peaks}"
-        return text + (f" ({self.marks})" if self.marks else "")
+        text += f" ({self.marks})" if self.marks else ""
+        return text + (f"; {self.extra}" if self.extra else "")
 
 
 class AutoPeakDetector:
@@ -107,7 +110,7 @@ class FeedbackListener:
     POLL_SECONDS = 0.01
 
     def __init__(self, port_name: str, channel: int, cc: int, peak: int | str | None = None,
-                 debug: bool = False, on_peak=None):
+                 debug: bool = False, on_peak=None, min_gap: float = 0.0):
         self.status = 0xB0 | (channel - 1)  # control change on this channel
         self.cc = cc
         self.peak = peak
@@ -117,6 +120,8 @@ class FeedbackListener:
         self._lock = threading.Lock()
         self._values: list[int] = []
         self._peaks = 0
+        self.min_gap = min_gap          # at least this many seconds between announced peaks
+        self._last_peak_t = -1e9
         self.t0 = time.monotonic()
 
         self._midi_in = rtmidi.MidiIn()
@@ -143,9 +148,10 @@ class FeedbackListener:
                 is_peak = self.detector.update(t, value)
             else:
                 is_peak = self.peak is not None and value >= self.peak
-            announce = is_peak and self._peaks == 0
+            announce = is_peak and self._peaks == 0 and t - self._last_peak_t >= self.min_gap
             if announce:
                 self._peaks += 1
+                self._last_peak_t = t
         if self.debug:
             print(f"  [feedback {t:7.2f}s] CC{self.cc} = {value}")
         if announce:

@@ -81,7 +81,21 @@ def parse_args(argv=None):
     p.add_argument("--peak-out", metavar="CH:CC[:LEVEL]", default="15:20:64",
                    help="with --feedback: on each peak, pulse this CC to LEVEL (1-127, then back to 0) out --port "
                         "for the rack; in VCV's MIDI CC->CV, 64 is about 5 V. 'off' to disable")
-    p.add_argument("--feedback-debug", action="store_true", help="print every feedback CC value received")
+    p.add_argument("--feedback-debug", action="store_true", help="print every feedback value received")
+    p.add_argument("--es8", action="store_true",
+                   help="use an Expert Sleepers ES-8 directly instead of the Hapax/VCV route: read the envelope "
+                        "follower (and a second input) and send peak triggers out of an ES-8 output")
+    p.add_argument("--es8-follower", type=int, default=1, metavar="N",
+                   help="with --es8: the ES-8 input carrying the envelope follower (peaks are found in it)")
+    p.add_argument("--es8-walk", type=int, default=2, metavar="N",
+                   help="with --es8: a second ES-8 input to summarize each phrase, e.g. a random walk (0 = none)")
+    p.add_argument("--es8-out", default="1:0.5", metavar="CH[:LEVEL]",
+                   help="with --es8: the ES-8 output that gets the 100 ms peak trigger, and its level as a fraction "
+                        "of full scale (0.5 is about 5 V if +-1.0 is about +-10 V)")
+    p.add_argument("--peak-gap", type=float, default=0.0, metavar="SECONDS",
+                   help="with --feedback or --es8: at least this long between peak triggers (0 = no limit)")
+    p.add_argument("--rack-state", choices=["on", "off"], default="on",
+                   help="with --es8: tell the model how active the rack was and where the walk is, as a gentle nudge")
     args = p.parse_args(argv)
 
     if args.mock and args.ollama:
@@ -162,7 +176,23 @@ def parse_peak(value: str) -> int | str:
     return n
 
 
-def open_feedback(spec: str, peak: int | str, debug: bool, key_change: bool, on_peak=None) -> FeedbackListener:
+def parse_es8_out(spec: str) -> tuple[int, float]:
+    """'1:0.5' -> (1, 0.5): ES-8 output number and pulse level (fraction of full scale)."""
+    try:
+        parts = spec.split(":")
+        channel = int(parts[0])
+        level = float(parts[1]) if len(parts) > 1 else 0.5
+        if len(parts) > 2:
+            raise ValueError
+    except (ValueError, IndexError):
+        raise SystemExit(f"Can't read --es8-out {spec!r}. Use CH or CH:LEVEL, e.g. 1:0.5")
+    if channel < 1 or not 0 < level <= 1:
+        raise SystemExit("--es8-out: channel must be 1 or more and LEVEL between 0 and 1")
+    return channel, level
+
+
+def open_feedback(spec: str, peak: int | str, debug: bool, key_change: bool, on_peak=None,
+                  min_gap: float = 0.0) -> FeedbackListener:
     try:
         port, channel, cc = spec.rsplit(":", 2)
         channel, cc = int(channel), int(cc)
@@ -174,7 +204,7 @@ def open_feedback(spec: str, peak: int | str, debug: bool, key_change: bool, on_
     print(f"Feedback: CC{cc} on channel {channel} from {name}; "
           + ("peaks found automatically (top of the last minute's range)" if peak == "auto" else f"peak at >= {peak}")
           + ("; one-phrase key change on peaks" if key_change else "; key changes off"))
-    return FeedbackListener(name, channel, cc, peak=peak, debug=debug, on_peak=on_peak)
+    return FeedbackListener(name, channel, cc, peak=peak, debug=debug, on_peak=on_peak, min_gap=min_gap)
 
 
 def build_tracks(args, root: int, mode: str) -> list[Track]:
@@ -279,9 +309,29 @@ def main(argv=None) -> int:
         threading.Timer(PULSE_SECONDS, player.send_cc, (out_channel, out_cc, 0)).start()
         print(f"  [feedback] -> pulsed CC{out_cc} on channel {out_channel + 1}")
 
-    feedback = (open_feedback(args.feedback, parse_peak(args.peak), args.feedback_debug, args.key_change,
-                              on_peak=pulse_peak_out if peak_out else None)
-                if args.feedback else None)
+    feedback = None
+    es8 = None
+    if args.es8:
+        if args.feedback:
+            raise SystemExit("--es8 and --feedback are alternatives (ES-8 direct vs the Hapax route); use one")
+        from es8 import ES8, ES8Feedback  # imported here so sounddevice is only needed with --es8
+        out_ch, out_level = parse_es8_out(args.es8_out)
+        inputs = [args.es8_follower] + ([args.es8_walk] if args.es8_walk else [])
+        es8 = ES8(inputs, out_ch, out_level, dry_run=args.dry_run)
+
+        def pulse_es8(value: int):
+            es8.pulse()
+            print(f"  [feedback] -> trigger on ES-8 output {out_ch}" + (" (dry run: not sent)" if args.dry_run else ""))
+
+        feedback = ES8Feedback(es8, parse_peak(args.peak), args.feedback_debug, on_peak=pulse_es8,
+                               min_gap=args.peak_gap, rack_hint=args.rack_state == "on")
+        print(f"ES-8 ({es8.device_name}, {es8.rate} Hz): input {args.es8_follower} = envelope follower"
+              + (f", input {args.es8_walk} = walk" if args.es8_walk else "")
+              + f"; output {out_ch} gets a 100 ms trigger at {out_level:g} of full scale "
+                f"(~{out_level * 10:.1f} V if +-1.0 is +-10 V)")
+    elif args.feedback:
+        feedback = open_feedback(args.feedback, parse_peak(args.peak), args.feedback_debug, args.key_change,
+                                 on_peak=pulse_peak_out if peak_out else None, min_gap=args.peak_gap)
     if peak_out:
         print(f"Peak out: CC{peak_out[1]} pulse to {peak_out[2]} (~{peak_out[2] * 10 / 127:.1f} V in VCV) "
               f"on channel {peak_out[0] + 1} via {port_label}")
@@ -316,6 +366,8 @@ def main(argv=None) -> int:
 
     def plan_next(base: Settings, current: Phrase | None):
         """Settings for the phrase about to be composed, the previous phrase to show (if any), and its plan."""
+        if rack_hint:
+            base = dataclasses.replace(base, note=(base.note + " " if base.note else "") + rack_hint)
         if planner is None:
             return base, current, None
         plan = planner.next(history)
@@ -328,13 +380,15 @@ def main(argv=None) -> int:
         return shaped, (current if plan.develop else None), plan
 
     cooldown = 0
+    rack_hint = ""  # what the rack did last phrase, as a sentence for the model (--es8 with --rack-state on)
 
     def next_settings(n_next: int, current_is_excursion: bool) -> Settings:
         """Pick the key for the phrase about to be composed, from what the rack did last phrase."""
-        nonlocal cooldown
+        nonlocal cooldown, rack_hint
         if feedback is None:
             return settings
         window = feedback.take_window()
+        rack_hint = window.hint
         print(f"  [feedback] last phrase: {window.describe()}")
         if not args.key_change:
             return settings
@@ -410,6 +464,8 @@ def main(argv=None) -> int:
                   f"(1.00 = every phrase brand new, 0.00 = identical)")
         if feedback:
             feedback.close()
+        if es8:
+            es8.close()
         if peak_out:
             time.sleep(PULSE_SECONDS)  # let an in-flight pulse finish before closing the port
             player.send_cc(peak_out[0], peak_out[1], 0)  # never leave the pulse high
