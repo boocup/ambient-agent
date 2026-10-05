@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import os
+import random
 import re
 import signal
 import sys
@@ -21,6 +22,8 @@ import mido
 from composer import (DEFAULT_MODEL, DEFAULT_OLLAMA_MODEL, ClaudeComposer, MockComposer,
                       OllamaComposer, Phrase, Settings, Track)
 from feedback import FeedbackListener
+from form import (FormPlanner, PhraseSummary, anchor_text, history_text, novelty, similarity, snap_to_rhythm,
+                  summarize, window_tracks)
 from music import clean_phrase, format_phrase, note_name, parse_key, parse_note, pc_name, scale_pitches, use_flats
 from player import DryRunPort, Player, find_port, output_names, save_midi
 
@@ -50,7 +53,16 @@ def parse_args(argv=None):
     p.add_argument("--mock", action="store_true", help="don't call the API; use a simple offline composer")
     p.add_argument("--ollama", nargs="?", const=DEFAULT_OLLAMA_MODEL, metavar="MODEL",
                    help=f"compose with a local model via Ollama instead of Claude (default {DEFAULT_OLLAMA_MODEL})")
-    p.add_argument("--seed", type=int, help="random seed for --mock")
+    p.add_argument("--seed", type=int, help="random seed for --mock and the form planner")
+    p.add_argument("--form", choices=["on", "off"], default="on",
+                   help="plan sections (statement, contrast, space, return) with register windows and a memory of "
+                        "recent phrases, to keep long sessions from settling into a rut; 'off' only ever "
+                        "develops the previous phrase")
+    p.add_argument("--memory", type=int, default=8, metavar="N",
+                   help="with --form on: how many recent phrases the model is shown (summaries)")
+    p.add_argument("--retry-similar", type=float, default=0.0, metavar="X",
+                   help="if a phrase's similarity to a recent one is above X (0-1), compose it once more "
+                        "(0 = never; costs an extra call, so keep the tempo slow enough)")
     p.add_argument("--save", metavar="FILE.mid", help="also write everything played to a MIDI file")
     p.add_argument("--model", default=DEFAULT_MODEL, help="Claude model ID")
     p.add_argument("--feedback", metavar="PORT:CH:CC",
@@ -275,11 +287,45 @@ def main(argv=None) -> int:
               f"on channel {peak_out[0] + 1} via {port_label}")
     print()
 
-    def compose(previous: Phrase | None, s: Settings) -> Phrase:
-        phrase = composer.compose(s, previous)
-        for t in s.tracks:
-            phrase.parts[t.name] = clean_phrase(phrase.parts.get(t.name, []), s.beats, t.scale)
+    def compose(previous: Phrase | None, s: Settings, recent: list, label: str = "phrase") -> Phrase:
+        def clean(phrase: Phrase) -> Phrase:
+            for t in s.tracks:
+                notes = phrase.parts.get(t.name, [])
+                if s.rhythm is not None:
+                    notes = snap_to_rhythm(notes, s.rhythm.get(t.name, []), s.beats)
+                phrase.parts[t.name] = clean_phrase(notes, s.beats, t.scale)
+            return phrase
+
+        phrase = clean(composer.compose(s, previous))
+        if args.retry_similar and recent:
+            worst = max(similarity(summarize(0, "", phrase.parts), r) for r in recent[-4:])
+            if worst > args.retry_similar:
+                print(f"  [form] {label} too similar to a recent phrase ({worst:.2f}) - composing it again")
+                again = dataclasses.replace(
+                    s, note=(s.note + " " if s.note else "")
+                    + "Your first attempt was too similar to a recent phrase. Write something clearly different: "
+                      "a new rhythm, a new contour, a different number of notes.")
+                phrase = clean(composer.compose(again, previous))
         return phrase
+
+    # Form: where we are in the larger shape, a memory of recent phrases, and the motif a RETURN echoes.
+    planner = FormPlanner([t.name for t in tracks], settings.beats, random.Random(args.seed)) if args.form == "on" else None
+    history: list[PhraseSummary] = []
+    novelties: list[float] = []
+    anchor = None  # (phrase number, parts) of the latest "statement 1" phrase
+
+    def plan_next(base: Settings, current: Phrase | None):
+        """Settings for the phrase about to be composed, the previous phrase to show (if any), and its plan."""
+        if planner is None:
+            return base, current, None
+        plan = planner.next(history)
+        text = history_text(history, args.memory)
+        if plan.echo_anchor and anchor:
+            text = (text + "\n" if text else "") + anchor_text(*anchor)
+        shaped = dataclasses.replace(
+            base, tracks=window_tracks(base.tracks, plan.registers),
+            note=(base.note + " " if base.note else "") + plan.instruction, history=text, rhythm=plan.rhythm)
+        return shaped, (current if plan.develop else None), plan
 
     cooldown = 0
 
@@ -310,28 +356,39 @@ def main(argv=None) -> int:
 
     try:
         print("Composing...")
-        current = Background(compose, None, settings).get()
+        first_settings, first_previous, current_plan = plan_next(settings, None)
+        current = Background(compose, first_previous, first_settings, [], "phrase 1").get()
         current_settings = settings
         n = 1
         while True:
             key_tag = f" [{excursion}]" if current_settings is excursion_settings else ""
-            print(f"\nPhrase {n}{key_tag}: {current.intent}")
+            plan_tag = f" [{current_plan.label()}]" if current_plan else ""
+            summary = summarize(n, current_plan.section if current_plan else "-", current.parts)
+            print(f"\nPhrase {n}{key_tag}{plan_tag}: {current.intent}")
+            if history:
+                score = novelty(summary, history)
+                novelties.append(score)
+                print(f"  novelty {score:.2f} vs the last {min(4, len(history))} (1.00 = brand new)")
+            if current_plan and current_plan.section == "statement" and current_plan.step == 1:
+                anchor = (n, current.parts)
+            history.append(summary)
             for t in tracks:
                 if len(tracks) > 1:
                     print(f"  {t.name} (ch {t.channel}):")
                 print(format_phrase(current.parts[t.name]))
             more = args.continuous and (args.phrases == 0 or n < args.phrases)
-            upcoming = upcoming_settings = None
+            upcoming = upcoming_settings = upcoming_plan = None
             if more:
                 upcoming_settings = next_settings(n + 1, current_settings is excursion_settings)
-                upcoming = Background(compose, current, upcoming_settings)
+                shaped, previous_shown, upcoming_plan = plan_next(upcoming_settings, current)
+                upcoming = Background(compose, previous_shown, shaped, list(history), f"phrase {n + 1}")
             player.play(channel_parts(current), settings.beats)
             played.append(current)
             if upcoming is None:
                 break
             if upcoming.thread.is_alive():
                 print("(still composing the next phrase...)")
-            current, current_settings = upcoming.get(), upcoming_settings
+            current, current_settings, current_plan = upcoming.get(), upcoming_settings, upcoming_plan
             n += 1
     except KeyboardInterrupt:
         print("\nStopping.")
@@ -348,6 +405,9 @@ def main(argv=None) -> int:
         print(f"\n{e}", file=sys.stderr)
         return 1
     finally:
+        if novelties:
+            print(f"Average novelty over {len(novelties)} phrase(s): {sum(novelties) / len(novelties):.2f} "
+                  f"(1.00 = every phrase brand new, 0.00 = identical)")
         if feedback:
             feedback.close()
         if peak_out:

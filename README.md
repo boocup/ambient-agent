@@ -106,7 +106,10 @@ appear an octave lower than this script names them; the MIDI numbers match.
 | `--dry-run` | off | Print gate on/off events instead of sending MIDI |
 | `--ollama [MODEL]` | off | Compose with a local model via Ollama (default `qwen2.5:7b`) |
 | `--mock` | off | Offline composer, no API calls |
-| `--seed N` | | Random seed for `--mock` |
+| `--seed N` | | Random seed for `--mock` and the form planner |
+| `--form on\|off` | `on` | Plan sections with register windows and phrase memory (see below); `off` only develops the previous phrase |
+| `--memory N` | 8 | With `--form on`: how many recent phrases the model is shown as summaries |
+| `--retry-similar X` | 0 (off) | Compose a phrase once more if its similarity to a recent one is above X (0-1). Costs an extra call, so leave tempo room |
 | `--save FILE.mid` | | Write everything played to a MIDI file |
 | `--model` | `claude-sonnet-5-5` | Claude model ID |
 | `--feedback PORT:CH:CC` | | Listen to a CC from the rack, e.g. `DIN:15:3` |
@@ -116,6 +119,32 @@ appear an octave lower than this script names them; the MIDI numbers match.
 | `--peak-cooldown N` | 3 | With `--key-change`: ignore new peaks for N phrases after a key change |
 | `--peak-out CH:CC[:LEVEL]` | `15:20:64` | On each peak, pulse this CC to LEVEL, then 0 after 100 ms, out `--port` for the rack (64 ≈ 5 V in VCV's MIDI CC→CV); `off` to disable |
 | `--feedback-debug` | off | Print every feedback CC value |
+
+## Keeping long sessions from repeating (form)
+
+Asking the model to "develop the previous phrase" every time pulls each phrase
+toward the last one, and over a long session the music settles into a rut. So
+the script plans the shape instead (`form.py`), with `--form on` by default:
+
+- **Sections.** A statement introduces a new motif, then develops it for a
+  phrase or two; a contrast leaves it behind (new rhythm, new contour, sparse or
+  busy); a space is mostly silence; a return brings the motif home, transformed.
+  Each phrase's log line shows its role, density and register windows.
+- **Register windows.** Each section confines each voice to the low, middle or
+  high part of its range. This is applied to the allowed notes themselves, so
+  the model cannot ignore it.
+- **Memory.** The model is shown a compact summary of the last 8 phrases
+  (rhythm onsets, contour, range) and told not to repeat them.
+- **No anchoring.** Contrast, space and return phrases are not shown the
+  previous phrase, because showing it is what pulls every phrase toward the last.
+- **Novelty.** Every phrase prints a 0-1 score of how different it is from the
+  last four (1.00 = brand new), and a session average is printed on exit. It is
+  also computed with `--form off`, so you can compare the two.
+
+```
+Phrase 7 [contrast 1/1 · busy · melody:high bass:low]: ...
+  novelty 0.62 vs the last 4 (1.00 = brand new)
+```
 
 ## Multiple tracks
 
@@ -204,6 +233,7 @@ before anything is played (`music.py`, `clean_phrase`):
 - `player.py` - MIDI port selection, real-time playback, panic, `.mid` export
 - `music.py` - note names, scales, phrase cleanup
 - `feedback.py` - listens for a CC from the rack and summarizes it per phrase
+- `form.py` - sections, register windows, phrase memory and the novelty score
 
 ## Notes
 

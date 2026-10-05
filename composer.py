@@ -35,7 +35,9 @@ class Settings:
     beats: float         # phrase length
     style: str           # free-text mood hints, may be empty
     tracks: list[Track]  # one monophonic voice each
-    note: str = ""       # one-off instruction for this phrase (e.g. a key change)
+    note: str = ""       # one-off instruction for this phrase (e.g. a key change, or its role in the form)
+    history: str = ""    # compact memory of recent phrases, and any motif to echo
+    rhythm: dict[str, list[float]] | None = None  # track -> start times fixed by the script (applied afterwards)
 
 
 @dataclass
@@ -95,10 +97,17 @@ double: give each its own register and rhythm, let one move while another \
 holds or rests, and favor consonant meetings (fifths, octaves, thirds, sixths) \
 where their notes overlap in time.
 
-When you are given the previous phrase, develop it rather than starting \
+When you are given the previous phrase and your role is to develop it, develop it rather than starting \
 over: keep a recognizable motif, rhythm, or contour and vary it (transpose \
 within the scale, invert, stretch, fragment, or answer it), so consecutive \
-phrases sound like one evolving piece."""
+phrases sound like one evolving piece.
+
+A request may also name the phrase's role in a larger form (statement, \
+contrast, space, return) and list the recent phrases. Obey the role. Unless \
+the role says to develop or return to something, never copy the rhythm or \
+contour of a recent phrase: change how many notes you write, their lengths, \
+where the rests fall, and where the line peaks. Staying inside the register \
+given by the allowed notes is part of the role."""
 
 
 def _settings_text(s: Settings) -> str:
@@ -118,6 +127,8 @@ def _settings_text(s: Settings) -> str:
         )
     if s.style:
         lines.append(f"\nMood / style hints: {s.style}")
+    if s.history:
+        lines.append("\n" + s.history)
     if s.note:
         lines.append(f"\nFor this phrase: {s.note}")
     return "\n".join(lines)
