@@ -51,7 +51,7 @@ def analyze(series: list[tuple[float, float]], base: float, min_amplitude: float
     }
 
 
-def measure_envelope(es8, out_port, midi_channel, note, base_seconds=1.0, timeout=45.0):
+def measure_envelope(es8, out_port, midi_channel, note, base_seconds=1.0, timeout=45.0, rise_only=False):
     """Trigger once and record until the envelope has finished (or the timeout)."""
     es8.drain()
     time.sleep(base_seconds)
@@ -72,6 +72,8 @@ def measure_envelope(es8, out_port, midi_channel, note, base_seconds=1.0, timeou
         result = analyze(series, base)
         if result:
             t_peak = max(series, key=lambda p: p[1])[0]
+            if rise_only and now - t_peak > 0.6 and series[-1][1] >= base + 0.95 * result["amplitude"]:
+                break                              # it has reached the top and is staying there
             done = series and series[-1][1] <= base + 0.1 * result["amplitude"] and series[-1][0] > t_peak
             below_since = (below_since or now) if done else None
             if below_since is not None and now - below_since > 0.5:
@@ -93,6 +95,8 @@ def main() -> int:
     p.add_argument("--note", default="D3", help="note to trigger with")
     p.add_argument("--volts", default="0,1,2,3,4,5", help="rate voltages to try, comma separated (capped at 5 V)")
     p.add_argument("--timeout", type=float, default=45.0, help="give up on an envelope after this many seconds")
+    p.add_argument("--rise-only", action="store_true",
+                   help="the signal rises and then stays high (or you only care about the rise): stop at the peak")
     p.add_argument("--dry-run", action="store_true", help="send no MIDI and no voltages; just read the input")
     args = p.parse_args()
 
@@ -119,14 +123,16 @@ def main() -> int:
             while not args.dry_run and abs(es8.cv_volts(args.out) - sent) > 0.02 and time.monotonic() < deadline:
                 time.sleep(0.05)
             time.sleep(0.5)
-            base, series = measure_envelope(es8, out_port, args.channel - 1, parse_note(args.note), timeout=args.timeout)
+            base, series = measure_envelope(es8, out_port, args.channel - 1, parse_note(args.note), timeout=args.timeout,
+                                          rise_only=args.rise_only)
             r = analyze(series, base)
             if not r:
                 print(f"{sent:6.1f}   no envelope seen on input {args.measure} (is its output patched there?)")
                 points.append({"volts": sent})
                 continue
             total = r["rise"] + r["fall"] if r["fall"] is not None else None
-            fall = f"{r['fall']:8.2f}" if r["fall"] is not None else f">{args.timeout:7.0f}"
+            fall = (f"{r['fall']:8.2f}" if r["fall"] is not None
+                    else f"{'-':>8}" if args.rise_only else f">{args.timeout:7.0f}")
             print(f"{sent:6.1f} {r['peak'] * 10:6.1f}V {r['rise']:8.2f} {fall} "
                   + (f"{total:8.2f}" if total is not None else f"{'>':>8}"))
             points.append({"volts": sent, "peak_volts": r["peak"] * 10, "rise": r["rise"], "fall": r["fall"], "total": total})

@@ -170,7 +170,9 @@ python calibrate_rate.py --out 2 --measure 5 --port DIN --channel 8
 
 It sweeps 0-5 V, triggers the envelope with a MIDI note at each step, records
 the envelope, and prints and saves (`rate_calibration.json`, not committed) the
-rise and fall times. Stop the agent first.
+rise and fall times. Stop the agent first. With one Rate CV controlling both rise
+and fall the two should track each other, which the table lets you check. If the
+signal rises and then stays high, add `--rise-only` to stop at the peak.
 
 ## Keeping long sessions from repeating (form)
 
