@@ -205,6 +205,34 @@ rise and fall times. Stop the agent first. With one Rate CV controlling both ris
 and fall the two should track each other, which the table lets you check. If the
 signal rises and then stays high, add `--rise-only` to stop at the peak.
 
+## Conductor mode (a generative module plays; the agent steers)
+
+`--conduct` composes nothing and sends no notes. Something else plays them (for
+example a Marbles-style random sampler driving your voices) and the agent reads
+the rack through the ES-8 and steers it back:
+
+```bash
+python ambient_agent.py --conduct --es8 --feedback HAPAX:15:3
+```
+
+- **Envelope rates.** `--rate OUT:WALK:V0:V1` (default `3:3:-0.5:-4` and
+  `4:4:-0.5:-4`) drives ES-8 output OUT, patched to an envelope's Rate CV, from the
+  walk on input WALK: V0 volts when the walk is at the bottom of its own recent
+  range, V1 at the top. The voltage glides at most `--rate-slew` V/s (default
+  0.3), is capped at +-5 V, and returns to 0 V on exit. A walk needs a minute of
+  history before it steers anything; until then the output heads for the middle
+  of its range. Measure what your envelope does at each voltage first
+  (`calibrate_rate.py`): on a Contour 1, negative rate voltages gave longer envelopes.
+- **Shift.** Peaks in the follower (read from the Hapax with `--feedback`) send the
+  trigger out `--es8-out`, as in the composer mode; `--peak-gap` limits how often.
+- **Triggers.** `--es8-trig 1,2` counts each voice's triggers and their typical
+  gap in every summary line, e.g. `voice1: 7 triggers, typical gap 4.1 s`.
+- No notes means no MIDI port, no composer, no Claude calls and no cost.
+
+```
+[conduct] voice1: 7 triggers, typical gap 4.1 s; walk3 at 0.62 -> output 3 -2.7 V; walk4 learning (holding mid) -> output 4 -2.25 V; peaks 1
+```
+
 ## Keeping long sessions from repeating (form)
 
 Asking the model to "develop the previous phrase" every time pulls each phrase

@@ -102,6 +102,18 @@ def parse_args(argv=None):
                    help="with --es8 and --form on: send the trigger out --es8-out when one of these sections "
                         "begins and again when it ends, e.g. 'contrast' (so contrast phrases sit a fifth up if the "
                         "trigger steps your shift); sections: statement, contrast, space, return")
+    p.add_argument("--conduct", action="store_true",
+                   help="conductor mode: compose nothing and send no notes (a generative module such as Marbles or "
+                        "Dice plays them); read the rack through the ES-8 and steer it back with slow envelope-rate "
+                        "voltages and the shift trigger. Needs --es8; add --feedback for the Hapax follower peaks")
+    p.add_argument("--conduct-window", type=float, default=20.0, metavar="SECONDS",
+                   help="with --conduct: how often to log a summary line")
+    p.add_argument("--rate", action="append", metavar="OUT:WALK:V0:V1",
+                   help="with --conduct: drive ES-8 output OUT (a rate CV) from the walk on input WALK: V0 volts when "
+                        "the walk is at the bottom of its recent range, V1 at the top, e.g. 3:3:-0.5:-4 "
+                        "(repeat for more; default: 3:3:-0.5:-4 and 4:4:-0.5:-4)")
+    p.add_argument("--rate-slew", type=float, default=0.3, metavar="V_PER_S",
+                   help="with --conduct: how fast the rate voltages may move, in volts per second")
     p.add_argument("--peak-gap", type=float, default=0.0, metavar="SECONDS",
                    help="with --feedback or --es8: at least this long between peak triggers (0 = no limit)")
     p.add_argument("--rack-state", choices=["on", "off"], default="on",
@@ -175,6 +187,7 @@ def in_key(tracks: list[Track], root: int, mode: str) -> list[Track]:
 
 
 PULSE_SECONDS = 0.1
+LEARN_SAMPLES = 120   # conductor mode: a walk needs a minute of history (2 samples/s) before it steers anything
 
 
 def parse_peak_out(spec: str) -> tuple[int, int, int] | None:
@@ -205,6 +218,97 @@ def parse_peak(value: str) -> int | str:
     if not 0 <= n <= 127:
         raise SystemExit("--peak must be 0-127 or 'auto'")
     return n
+
+
+def parse_inputs(text: str, flag: str) -> list[int]:
+    try:
+        return [int(x) for x in text.split(",") if x.strip() not in ("", "0")]
+    except ValueError:
+        raise SystemExit(f"{flag} must be input numbers like 1,2 (or 0), got {text!r}")
+
+
+def parse_rate(spec: str) -> tuple[int, int, float, float]:
+    """'3:3:-0.5:-4' -> (output 3, walk input 3, 0.5 V... -0.5, -4.0)."""
+    try:
+        out, walk, v0, v1 = spec.split(":")
+        return int(out), int(walk), float(v0), float(v1)
+    except ValueError:
+        raise SystemExit(f"Can't read --rate {spec!r}. Use OUT:WALK:V0:V1, e.g. 3:3:-0.5:-4")
+
+
+def run_conduct(args) -> int:
+    """Conductor mode: nothing is composed and no notes are sent. Something else (a generative module) plays; the
+    agent reads the rack through the ES-8 and steers it back with slow envelope-rate voltages and the shift trigger."""
+    if not args.es8:
+        raise SystemExit("--conduct needs --es8")
+    from es8 import ES8, ES8Feedback
+    out_ch, out_level = parse_es8_out(args.es8_out)
+    walks = parse_inputs(args.es8_walk, "--es8-walk")
+    trig_inputs = parse_inputs(args.es8_trig, "--es8-trig")
+    rates = [parse_rate(r) for r in (args.rate or ["3:3:-0.5:-4", "4:4:-0.5:-4"])]
+    for out, walk, v0, v1 in rates:
+        if walk not in walks:
+            raise SystemExit(f"--rate uses walk input {walk}, which isn't in --es8-walk ({args.es8_walk})")
+        if out == out_ch:
+            raise SystemExit(f"--rate output {out} is the shift trigger output (--es8-out); choose another")
+    inputs = trig_inputs + walks
+    if len(set(inputs)) != len(inputs):
+        raise SystemExit("--es8-trig and --es8-walk must use different inputs")
+    es8 = ES8(inputs, out_ch, out_level, dry_run=args.dry_run, cv_channels=tuple(r[0] for r in rates),
+              cv_slew=args.rate_slew)
+
+    def pulse_es8(value: int):
+        es8.pulse()
+        print(f"  [shift] peak -> trigger on ES-8 output {out_ch}" + (" (dry run: not sent)" if args.dry_run else ""))
+
+    voices = {f"voice{i + 1}": n for i, n in enumerate(trig_inputs)}
+    feedback = ES8Feedback(es8, parse_peak(args.peak), args.feedback_debug, on_peak=pulse_es8,
+                           min_gap=args.peak_gap, rack_hint=False, follower=None, walks=walks, triggers=voices)
+    midi_feedback = (open_feedback(args.feedback, parse_peak(args.peak), args.feedback_debug, False,
+                                   on_peak=pulse_es8, min_gap=args.peak_gap) if args.feedback else None)
+
+    def on_sigterm(signum, frame):
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, on_sigterm)
+
+    print(f"Conductor mode (no notes). ES-8: " + ", ".join(f"input {n} = {v} trigger" for v, n in voices.items())
+          + (f", inputs {','.join(map(str, walks))} = walks" if walks else "")
+          + f"; output {out_ch} = shift trigger")
+    for out, walk, v0, v1 in rates:
+        print(f"  rate: output {out} follows the walk on input {walk}, {v0:+g} V (bottom of its range) to "
+              f"{v1:+g} V (top), gliding at most {args.rate_slew:g} V/s")
+    print(f"Peaks: {'the Hapax follower (' + args.feedback + ')' if args.feedback else 'none (no --feedback)'}. "
+          f"Summary every {args.conduct_window:g} s. Ctrl+C to stop.\n")
+    try:
+        while True:
+            end = time.monotonic() + args.conduct_window
+            while time.monotonic() < end:
+                for out, walk, v0, v1 in rates:
+                    # Until the walk has a minute of history its range means nothing: head for the middle.
+                    position = feedback.walk_position(walks.index(walk), min_samples=LEARN_SAMPLES)
+                    es8.set_cv(out, v0 + (0.5 if position is None else position) * (v1 - v0))
+                time.sleep(0.5)
+            parts = []
+            for voice, (count, median, smallest) in feedback.trigger_stats().items():
+                parts.append(f"{voice}: {count} triggers" + (f", typical gap {median:.1f} s" if median else ""))
+            for out, walk, v0, v1 in rates:
+                position = feedback.walk_position(walks.index(walk), min_samples=LEARN_SAMPLES)
+                parts.append(f"walk{walk} " + (f"at {position:.2f}" if position is not None else "learning (holding mid)")
+                             + f" -> output {out} {es8.cv_volts(out):+.2f} V")
+            window = feedback.take_window()
+            peaks = (midi_feedback.take_window().peaks if midi_feedback else 0)
+            parts.append(f"peaks {peaks}")
+            if window.extra and "glitch" in window.extra:
+                parts.append(window.extra[window.extra.index("glitch") - 3:])
+            print("[conduct] " + "; ".join(parts))
+    except KeyboardInterrupt:
+        print("\nStopping.")
+    finally:
+        if midi_feedback:
+            midi_feedback.close()
+        feedback.close()
+        es8.close()                      # glides every rate voltage back to 0 V
+    return 0
 
 
 def parse_es8_out(spec: str) -> tuple[int, float]:
@@ -277,6 +381,9 @@ def main(argv=None) -> int:
         for n in names:
             print(f"  {n}")
         return 0
+
+    if args.conduct:
+        return run_conduct(args)
 
     # Spell notes the way the key was written: 'Bb ...' -> flats, 'A# ...' -> sharps.
     use_flats(args.key.strip()[1:2] == "b")
@@ -355,12 +462,6 @@ def main(argv=None) -> int:
             raise SystemExit("--feedback already supplies the follower; use --es8-follower 0 with it")
         from es8 import ES8, ES8Feedback  # imported here so sounddevice is only needed with --es8
         out_ch, out_level = parse_es8_out(args.es8_out)
-        def parse_inputs(text: str, flag: str) -> list[int]:
-            try:
-                return [int(x) for x in text.split(",") if x.strip() not in ("", "0")]
-            except ValueError:
-                raise SystemExit(f"{flag} must be input numbers like 1,2 (or 0), got {text!r}")
-
         walks = parse_inputs(args.es8_walk, "--es8-walk")
         trig_inputs = parse_inputs(args.es8_trig, "--es8-trig")
         if len(trig_inputs) > len(tracks):

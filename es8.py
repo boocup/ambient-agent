@@ -10,6 +10,7 @@ writes zeros (or the pulse) to the outputs; everything else happens on other thr
 
 from __future__ import annotations
 
+import statistics
 import threading
 import time
 from collections import deque
@@ -162,6 +163,10 @@ class ES8Feedback:
         self.detector = AutoPeakDetector() if (follower and peak == "auto") else None
         self.matcher = TriggerMatcher(list(self.triggers)) if self.triggers else None
         self._trig_high = {v: False for v in self.triggers}
+        self._trig_times: dict[str, list[float]] = {v: [] for v in self.triggers}   # for trigger_stats()
+        self._walk_samples = [deque(maxlen=720) for _ in self.walks]   # every 0.5 s, about 6 minutes
+        self._walk_last: list[float | None] = [None for _ in self.walks]
+        self._last_walk_sample = -1e9
         self._lock = threading.Lock()
         self._blocks = 0
         self._f: list[float] = []
@@ -204,6 +209,8 @@ class ES8Feedback:
             high = self._trig_high[voice]
             if not high and peaks[col] >= self.TRIG_ON:
                 self._trig_high[voice] = True
+                with self._lock:
+                    self._trig_times[voice].append(stamp)
                 self.matcher.trigger_seen(voice, stamp - 0.5 * self.es8.BLOCK / self.es8.rate)  # mid-block
                 if self.debug:
                     print(f"  [es8 {t:7.2f}s] trigger on input {channel} ({voice})")
@@ -213,6 +220,12 @@ class ES8Feedback:
         with self._lock:
             for series, value in zip(self._w, walks):
                 series.append(value)
+            for i, value in enumerate(walks):
+                self._walk_last[i] = value
+            if t - self._last_walk_sample >= 0.5:
+                self._last_walk_sample = t
+                for samples, value in zip(self._walk_samples, walks):
+                    samples.append(value)
         if self.follower:
             self._record_follower(t, float(means[self._col[self.follower]]), walks)
 
@@ -237,6 +250,29 @@ class ES8Feedback:
             print(f"  [feedback {t:7.2f}s] PEAK: follower {scaled}/127 ({level})")
             if self.on_peak:
                 self.on_peak(scaled)
+
+    def trigger_stats(self) -> dict:
+        """Per voice since the last call: (triggers seen, median gap in s, smallest gap in s)."""
+        with self._lock:
+            times, self._trig_times = self._trig_times, {v: [] for v in self.triggers}
+        out = {}
+        for voice, stamps in times.items():
+            gaps = [b - a for a, b in zip(stamps, stamps[1:])]
+            out[voice] = (len(stamps), statistics.median(gaps) if gaps else None, min(gaps) if gaps else None)
+        return out
+
+    def walk_position(self, index: int, min_samples: int = 20) -> float | None:
+        """Where walk number `index` is within its own recent range, 0 to 1 (5th to 95th percentile of the last
+        few minutes). None until it has `min_samples` readings (2 per second) and a range worth speaking of (a flat
+        signal means nothing)."""
+        with self._lock:
+            samples, last = sorted(self._walk_samples[index]), self._walk_last[index]
+        if len(samples) < min_samples or last is None:
+            return None
+        lo, hi = samples[int(0.05 * (len(samples) - 1))], samples[int(0.95 * (len(samples) - 1))]
+        if hi - lo < 0.02:            # less than 2% of full scale (about 0.2 V)
+            return None
+        return min(1.0, max(0.0, (last - lo) / (hi - lo)))
 
     def take_window(self) -> Window:
         with self._lock:
