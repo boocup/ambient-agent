@@ -121,7 +121,7 @@ appear an octave lower than this script names them; the MIDI numbers match.
 | `--feedback-debug` | off | Print every feedback value (CC, or ES-8 readings twice a second) |
 | `--es8` | off | Use an Expert Sleepers ES-8 directly (no Hapax, no VCV Rack); see "ES-8 direct" below |
 | `--es8-follower N` | 1 | With `--es8`: the ES-8 input carrying the envelope follower; peaks are found in it |
-| `--es8-walk N` | 2 | With `--es8`: a second input summarized every phrase, e.g. a random walk (0 = none) |
+| `--es8-walk N[,N...]` | 2 | With `--es8`: more inputs summarized every phrase, e.g. random walks: `2` or `3,4` (0 = none) |
 | `--es8-out CH[:LEVEL]` | `1:0.5` | With `--es8`: the output that gets the 100 ms peak trigger, and its level as a fraction of full scale |
 | `--peak-gap SECONDS` | 0 | With `--feedback` or `--es8`: at least this long between peak triggers |
 | `--rack-state on\|off` | `on` | With `--es8`: tell the model how active the rack was and where the walk sits, as a gentle nudge |
@@ -141,8 +141,8 @@ python ambient_agent.py --port DIN --continuous --bpm 40 --key "Bb minor-pentato
   are found in it the same way as in the MIDI version (`--peak auto`, or a number
   on a 0-127 scale), and each peak sends a 100 ms trigger out **output 1**
   (`--es8-out`). With `--peak-gap 90` that is at most one trigger per 90 s.
-- **Input 2** (`--es8-walk`) is summarized every phrase: its range, which way it
-  moved, and where it sits in its recent range.
+- **Further inputs** (`--es8-walk 3,4`) are summarized every phrase, each on its
+  own: its range, which way it moved, and where it sits in its recent range.
 - With `--rack-state on` the model is told, as a gentle nudge, how active the
   rack was and where the walk sits (a very active rack: leave space; a high
   walk: nudge the melody up).
@@ -154,6 +154,23 @@ with a meter or scope. The trigger level that worked for a Doepfer A-151 was
 0 V, including when the program stops. The device is found by name, so its
 number in the system's audio list doesn't matter. Per-phrase log lines show
 `audio glitch(es)` if the Mac was ever too busy to keep the audio steady.
+
+### Slow control voltages and envelope-rate calibration
+
+`ES8` can also hold slow DC voltages on outputs (`set_cv`): they glide to their
+target (1 V/s by default, never jumping), are capped at +-5 V, and return to 0 V
+when the program stops. The aim is to vary an envelope generator's rate from the
+agent. A Contour 1's rate CV spans a very wide time range (about 500 us to 30 s
+over 0-10 V per its manual), so measure before choosing a range:
+
+```bash
+# patch: ES-8 output 2 -> the envelope's Rate CV in; the envelope's output -> ES-8 input 5
+python calibrate_rate.py --out 2 --measure 5 --port DIN --channel 8
+```
+
+It sweeps 0-5 V, triggers the envelope with a MIDI note at each step, records
+the envelope, and prints and saves (`rate_calibration.json`, not committed) the
+rise and fall times. Stop the agent first.
 
 ## Keeping long sessions from repeating (form)
 
@@ -268,7 +285,8 @@ before anything is played (`music.py`, `clean_phrase`):
 - `player.py` - MIDI port selection, real-time playback, panic, `.mid` export
 - `music.py` - note names, scales, phrase cleanup
 - `feedback.py` - listens for a CC from the rack and summarizes it per phrase
-- `es8.py` - reads CV from an ES-8's inputs and sends triggers out of its outputs
+- `es8.py` - reads CV from an ES-8's inputs, sends triggers and slow control voltages out of its outputs
+- `calibrate_rate.py` - measures an envelope's rise/fall times against a rate voltage from the ES-8
 - `form.py` - sections, register windows, phrase memory and the novelty score
 
 ## Notes

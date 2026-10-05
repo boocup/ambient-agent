@@ -87,8 +87,9 @@ def parse_args(argv=None):
                         "follower (and a second input) and send peak triggers out of an ES-8 output")
     p.add_argument("--es8-follower", type=int, default=1, metavar="N",
                    help="with --es8: the ES-8 input carrying the envelope follower (peaks are found in it)")
-    p.add_argument("--es8-walk", type=int, default=2, metavar="N",
-                   help="with --es8: a second ES-8 input to summarize each phrase, e.g. a random walk (0 = none)")
+    p.add_argument("--es8-walk", default="2", metavar="N[,N...]",
+                   help="with --es8: more ES-8 inputs to summarize each phrase, e.g. random walks: '2' or '3,4' "
+                        "(0 = none)")
     p.add_argument("--es8-out", default="1:0.5", metavar="CH[:LEVEL]",
                    help="with --es8: the ES-8 output that gets the 100 ms peak trigger, and its level as a fraction "
                         "of full scale (0.5 is about 5 V if +-1.0 is about +-10 V)")
@@ -316,7 +317,13 @@ def main(argv=None) -> int:
             raise SystemExit("--es8 and --feedback are alternatives (ES-8 direct vs the Hapax route); use one")
         from es8 import ES8, ES8Feedback  # imported here so sounddevice is only needed with --es8
         out_ch, out_level = parse_es8_out(args.es8_out)
-        inputs = [args.es8_follower] + ([args.es8_walk] if args.es8_walk else [])
+        try:
+            walks = [int(x) for x in args.es8_walk.split(",") if x.strip() not in ("", "0")]
+        except ValueError:
+            raise SystemExit(f"--es8-walk must be input numbers like 2 or 3,4 (or 0), got {args.es8_walk!r}")
+        inputs = [args.es8_follower] + walks
+        if len(set(inputs)) != len(inputs):
+            raise SystemExit("--es8-follower and --es8-walk must be different inputs")
         es8 = ES8(inputs, out_ch, out_level, dry_run=args.dry_run)
 
         def pulse_es8(value: int):
@@ -326,7 +333,7 @@ def main(argv=None) -> int:
         feedback = ES8Feedback(es8, parse_peak(args.peak), args.feedback_debug, on_peak=pulse_es8,
                                min_gap=args.peak_gap, rack_hint=args.rack_state == "on")
         print(f"ES-8 ({es8.device_name}, {es8.rate} Hz): input {args.es8_follower} = envelope follower"
-              + (f", input {args.es8_walk} = walk" if args.es8_walk else "")
+              + (f", input{'s' if len(walks) > 1 else ''} {','.join(map(str, walks))} = walk" if walks else "")
               + f"; output {out_ch} gets a 100 ms trigger at {out_level:g} of full scale "
                 f"(~{out_level * 10:.1f} V if +-1.0 is +-10 V)")
     elif args.feedback:

@@ -4,3 +4,4 @@ __pycache__/
 .DS_Store
 .webui_secret_key
 *.mid
+rate_calibration.json
