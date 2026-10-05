@@ -148,6 +148,7 @@ python ambient_agent.py --port DIN --continuous --bpm 40 --key "Bb minor-pentato
   walk: nudge the melody up).
 - `--es8` and `--feedback` (the Hapax route) are alternatives.
 
+The ES-8 has 4 input and 8 output jacks (macOS reports more channels; the extras are not jacks).
 Voltages assume the ES-8's +-1.0 is about +-10 V; calibrate the trigger level
 with a meter or scope. The trigger level that worked for a Doepfer A-151 was
 0.5 (about 5 V); a full 10 V made it step twice. The output always returns to
@@ -164,8 +165,8 @@ agent. A Contour 1's rate CV spans a very wide time range (about 500 us to 30 s
 over 0-10 V per its manual), so measure before choosing a range:
 
 ```bash
-# patch: ES-8 output 2 -> the envelope's Rate CV in; the envelope's output -> ES-8 input 5
-python calibrate_rate.py --out 2 --measure 5 --port DIN --channel 8
+# patch: ES-8 output 3 -> the envelope's Rate CV in; the envelope's output -> a free ES-8 input (the ES-8 has 4 in, 8 out)
+python calibrate_rate.py --out 3 --measure 2 --port DIN --channel 8
 ```
 
 It sweeps 0-5 V, triggers the envelope with a MIDI note at each step, records

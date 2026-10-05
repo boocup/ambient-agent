@@ -40,6 +40,9 @@ class ES8:
                  max_cv_volts: float = MAX_CV_VOLTS):
         index, info = find_es8(name)
         n_in, n_out = info["max_input_channels"], info["max_output_channels"]
+        if "es-8" in info["name"].lower():
+            # macOS reports more channels (12 in, 16 out) than the ES-8 has jacks: 4 inputs, 8 outputs.
+            n_in, n_out = min(n_in, 4), min(n_out, 8)
         for c in in_channels:
             if not 1 <= c <= n_in:
                 raise SystemExit(f"ES-8 input {c} doesn't exist (1-{n_in})")

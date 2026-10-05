@@ -104,7 +104,7 @@ def main() -> int:
     from player import find_port
 
     volts = [float(v) for v in args.volts.split(",")]
-    spare = 16 if args.out != 16 else 15
+    spare = 8 if args.out != 8 else 7      # an unused output for the (unused) trigger channel; the ES-8 has 8
     es8 = ES8([args.measure], out_channel=spare, level=0.0, dry_run=args.dry_run, cv_channels=(args.out,), cv_slew=2.0)
     out_port = None
     if not args.dry_run:
