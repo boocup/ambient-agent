@@ -44,6 +44,7 @@ class Settings:
 class Phrase:
     parts: dict[str, list[Note]]  # track name -> notes
     intent: str                   # one-line description of the idea, for display
+    compose_seconds: float = 0.0  # how long composing it took (set by the agent)
 
 
 NOTES_SCHEMA = {
@@ -154,7 +155,8 @@ def _parse_phrase(text: str, tracks: list[Track]) -> Phrase:
 
 
 class ClaudeComposer:
-    def __init__(self, model: str = DEFAULT_MODEL):
+    def __init__(self, model: str = DEFAULT_MODEL, effort: str = "medium"):
+        self.effort = effort
         # A stalled connection must not hang a live session (the library's default timeout is 10 minutes).
         self.client = anthropic.Anthropic(timeout=45.0, max_retries=2)
         self.model = model
@@ -171,7 +173,7 @@ class ClaudeComposer:
             fallbacks="default",
             system=SYSTEM_PROMPT,
             output_config={
-                "effort": "medium",
+                "effort": self.effort,
                 "format": {"type": "json_schema", "schema": phrase_schema(s.tracks)},
             },
             messages=[{"role": "user", "content": prompt}],

@@ -112,6 +112,7 @@ appear an octave lower than this script names them; the MIDI numbers match.
 | `--retry-similar X` | 0 (off) | Compose a phrase once more if its similarity to a recent one is above X (0-1). Costs an extra call, so leave tempo room |
 | `--save FILE.mid` | | Write everything played to a MIDI file |
 | `--model` | `claude-sonnet-5-5` | Claude model ID |
+| `--effort low\|medium\|high` | `medium` | How much Claude thinks before answering. Measured on one home network, two-track phrases took 3-6 s at both low and medium |
 | `--feedback PORT:CH:CC` | | Listen to a CC from the rack, e.g. `DIN:15:3` |
 | `--peak N\|auto` | `auto` | With `--feedback`: what counts as a peak. `auto` finds the top of the CC's own range over the last minute; a number (e.g. `91`) means that CC value or higher |
 | `--key-change` | off | Also move to `--peak-key` for one phrase after a peak |
@@ -321,6 +322,13 @@ before anything is played (`music.py`, `clean_phrase`):
 - `triggers.py` - matches the notes the agent sent with the triggers that actually fired
 - `calibrate_rate.py` - measures an envelope's rise/fall times against a rate voltage from the ES-8
 - `form.py` - sections, register windows, phrase memory and the novelty score
+
+## Timing
+
+Each phrase's log line shows how long it took to compose, and, when the music
+had to wait for it, how long: `composed in 4.1 s; the music waited 1.2 s for it`.
+A phrase is composed while the previous one plays, so only a composition slower
+than the phrase is audible as a gap.
 
 ## When the network drops
 

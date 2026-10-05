@@ -65,6 +65,8 @@ def parse_args(argv=None):
                         "(0 = never; costs an extra call, so keep the tempo slow enough)")
     p.add_argument("--save", metavar="FILE.mid", help="also write everything played to a MIDI file")
     p.add_argument("--model", default=DEFAULT_MODEL, help="Claude model ID")
+    p.add_argument("--effort", choices=["low", "medium", "high"], default="medium",
+                   help="how much Claude thinks before answering: lower is faster (and cheaper), higher is slower")
     p.add_argument("--feedback", metavar="PORT:CH:CC",
                    help="listen to a CC from the rack, e.g. DIN:15:3 (input port, channel, CC number)")
     p.add_argument("--peak", default="auto", metavar="N|auto",
@@ -318,7 +320,7 @@ def main(argv=None) -> int:
     elif args.ollama:
         composer, composer_label = OllamaComposer(args.ollama), f"{args.ollama} (local, via Ollama)"
     else:
-        composer, composer_label = ClaudeComposer(args.model), args.model
+        composer, composer_label = ClaudeComposer(args.model, args.effort), f"{args.model} (effort {args.effort})"
     player = Player(port, channels=[t.channel - 1 for t in tracks], bpm=args.bpm)
     played: list[Phrase] = []
 
@@ -409,6 +411,7 @@ def main(argv=None) -> int:
                 phrase.parts[t.name] = clean_phrase(notes, s.beats, t.scale)
             return phrase
 
+        started = time.monotonic()
         phrase = clean(compose_with_fallback(composer, offline, s, previous, label))
         if args.retry_similar and recent:
             worst = max(similarity(summarize(0, "", phrase.parts), r) for r in recent[-4:])
@@ -419,6 +422,7 @@ def main(argv=None) -> int:
                     + "Your first attempt was too similar to a recent phrase. Write something clearly different: "
                       "a new rhythm, a new contour, a different number of notes.")
                 phrase = clean(compose_with_fallback(composer, offline, again, previous, label))
+        phrase.compose_seconds = time.monotonic() - started
         return phrase
 
     # Form: where we are in the larger shape, a memory of recent phrases, and the motif a RETURN echoes.
@@ -475,7 +479,9 @@ def main(argv=None) -> int:
     try:
         print("Composing...")
         first_settings, first_previous, current_plan = plan_next(settings, None)
+        t_wait = time.monotonic()
         current = Background(compose, first_previous, first_settings, [], "phrase 1").get()
+        waited = time.monotonic() - t_wait
         current_settings = settings
         n = 1
         while True:
@@ -483,6 +489,8 @@ def main(argv=None) -> int:
             plan_tag = f" [{current_plan.label()}]" if current_plan else ""
             summary = summarize(n, current_plan.section if current_plan else "-", current.parts)
             print(f"\nPhrase {n}{key_tag}{plan_tag}: {current.intent}")
+            print(f"  composed in {current.compose_seconds:.1f} s"
+                  + (f"; the music waited {waited:.1f} s for it" if waited > 0.3 and n > 1 else ""))
             if history:
                 score = novelty(summary, history)
                 novelties.append(score)
@@ -513,7 +521,9 @@ def main(argv=None) -> int:
                 break
             if upcoming.thread.is_alive():
                 print("(still composing the next phrase...)")
+            t_wait = time.monotonic()
             current, current_settings, current_plan = upcoming.get(), upcoming_settings, upcoming_plan
+            waited = time.monotonic() - t_wait
             n += 1
     except KeyboardInterrupt:
         print("\nStopping.")
