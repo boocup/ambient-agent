@@ -110,7 +110,7 @@ appear an octave lower than this script names them; the MIDI numbers match.
 | `--save FILE.mid` | | Write everything played to a MIDI file |
 | `--model` | `claude-sonnet-5-5` | Claude model ID |
 | `--feedback PORT:CH:CC` | | Listen to a CC from the rack, e.g. `DIN:15:3` |
-| `--peak N` | 91 | With `--feedback`: a CC value at or above this counts as a peak |
+| `--peak N\|auto` | `auto` | With `--feedback`: what counts as a peak. `auto` finds the top of the CC's own range over the last minute; a number (e.g. `91`) means that CC value or higher |
 | `--key-change` | off | Also move to `--peak-key` for one phrase after a peak |
 | `--peak-key "ROOT MODE"` | up a fifth | With `--key-change`: key for the excursion |
 | `--peak-cooldown N` | 3 | With `--key-change`: ignore new peaks for N phrases after a key change |
@@ -138,12 +138,19 @@ Hapax CV in → mod matrix → CC 3 on channel 15 → Hapax USB to the Mac - the
 
 ```bash
 python ambient_agent.py --ollama --port DIN --continuous --bpm 40 --key "Bb minor-pentatonic" \
-  --track 8:melody:C3-C5 --track 9:bass:C1-C3 --feedback HAPAX:15:3 --peak 91
+  --track 8:melody:C3-C5 --track 9:bass:C1-C3 --feedback HAPAX:15:3
 ```
 
-A CC value of 91 or more is a peak. By default a peak only sends the pulse
-below, so the rack decides what happens (e.g. a quantizer's shift input);
-the agent stays in its key.
+By default (`--peak auto`) the agent works out for itself what a peak is: it
+watches the last minute of the CC and fires when the value climbs near the top
+of that range, then re-arms once it falls back toward the middle, so one swell
+is one peak. This matters because an envelope that idles high (the Hapax maps
+0 V to about CC 64, so a hot follower sits around 118-125) would fire a fixed
+threshold on every phrase. It ignores a flat signal, and learns for the first
+8 seconds. At most one peak is announced per phrase. A number such as
+`--peak 91` restores the fixed threshold. A peak only sends the pulse below,
+so the rack decides what happens (e.g. a quantizer's shift input); the agent
+stays in its key.
 
 ### Optional: key change in the agent
 
@@ -157,7 +164,7 @@ Debug lines show it happening:
 ```
   [feedback   3.54s] PEAK: CC3 = 95 (>= 91)
   [feedback] last phrase: 12 msgs, min 80, avg 88, max 95
-  [key] peak 95 >= 91: phrase 4 will be in A dorian
+  [key] peak (max 121): phrase 4 will be in A dorian
 Phrase 4 [A dorian]: ...
   [key] phrase 5 returns home to D dorian
 ```
@@ -173,8 +180,9 @@ the peak, independent of the key-change cooldown. Change it with
 `--peak-out 15:21`, or turn it off with `--peak-out off`.
 
 ```
-  [feedback  23.40s] PEAK: CC3 = 93 (>= 91)
+  [feedback  23.40s] PEAK: CC3 = 115 (auto: range 80-123, peak at 114)
   [feedback] -> pulsed CC20 on channel 15
+  [feedback] last phrase: 149 msgs, min 80, avg 89, max 121, peaks 1 (auto: range 80-123, peak at 114)
 ```
 
 ## How notes are cleaned up

@@ -55,8 +55,10 @@ def parse_args(argv=None):
     p.add_argument("--model", default=DEFAULT_MODEL, help="Claude model ID")
     p.add_argument("--feedback", metavar="PORT:CH:CC",
                    help="listen to a CC from the rack, e.g. DIN:15:3 (input port, channel, CC number)")
-    p.add_argument("--peak", type=int, default=91,
-                   help="with --feedback: a CC value at or above this counts as a peak (pulses --peak-out)")
+    p.add_argument("--peak", default="auto", metavar="N|auto",
+                   help="with --feedback: what counts as a peak (pulses --peak-out). A CC value (e.g. 91) at or "
+                        "above it, or 'auto': the top of the CC's own range over the last minute, which also "
+                        "works when the envelope idles high")
     p.add_argument("--key-change", action="store_true",
                    help="with --feedback: also move to --peak-key for one phrase after a peak "
                         "(off by default - leave key changes to the rack's quantizers)")
@@ -135,7 +137,20 @@ def parse_peak_out(spec: str) -> tuple[int, int, int] | None:
     return channel - 1, cc, level
 
 
-def open_feedback(spec: str, peak: int, debug: bool, key_change: bool, on_peak=None) -> FeedbackListener:
+def parse_peak(value: str) -> int | str:
+    """'auto' stays 'auto'; anything else must be a CC value 0-127."""
+    if value.lower() == "auto":
+        return "auto"
+    try:
+        n = int(value)
+    except ValueError:
+        raise SystemExit(f"--peak must be a number 0-127 or 'auto', got {value!r}")
+    if not 0 <= n <= 127:
+        raise SystemExit("--peak must be 0-127 or 'auto'")
+    return n
+
+
+def open_feedback(spec: str, peak: int | str, debug: bool, key_change: bool, on_peak=None) -> FeedbackListener:
     try:
         port, channel, cc = spec.rsplit(":", 2)
         channel, cc = int(channel), int(cc)
@@ -144,7 +159,8 @@ def open_feedback(spec: str, peak: int, debug: bool, key_change: bool, on_peak=N
     if not 1 <= channel <= 16 or not 0 <= cc <= 127:
         raise SystemExit("--feedback: channel must be 1-16 and CC 0-127")
     name = find_port(port, mido.get_input_names(), kind="input")
-    print(f"Feedback: CC{cc} on channel {channel} from {name}; peak at >= {peak}"
+    print(f"Feedback: CC{cc} on channel {channel} from {name}; "
+          + ("peaks found automatically (top of the last minute's range)" if peak == "auto" else f"peak at >= {peak}")
           + ("; one-phrase key change on peaks" if key_change else "; key changes off"))
     return FeedbackListener(name, channel, cc, peak=peak, debug=debug, on_peak=on_peak)
 
@@ -239,6 +255,7 @@ def main(argv=None) -> int:
     print(f"{args.key}, {args.bpm:g} BPM, {args.beats:g}-beat phrases"
           + (f", style: {args.style}" if args.style else ""))
     print(f"Composer: {composer_label}. Ctrl+C to stop.")
+    parse_peak(args.peak)
     peak_out = parse_peak_out(args.peak_out)  # validate even when unused, so typos surface
     if not args.feedback:
         peak_out = None
@@ -250,7 +267,7 @@ def main(argv=None) -> int:
         threading.Timer(PULSE_SECONDS, player.send_cc, (out_channel, out_cc, 0)).start()
         print(f"  [feedback] -> pulsed CC{out_cc} on channel {out_channel + 1}")
 
-    feedback = (open_feedback(args.feedback, args.peak, args.feedback_debug, args.key_change,
+    feedback = (open_feedback(args.feedback, parse_peak(args.peak), args.feedback_debug, args.key_change,
                               on_peak=pulse_peak_out if peak_out else None)
                 if args.feedback else None)
     if peak_out:
@@ -279,12 +296,12 @@ def main(argv=None) -> int:
         if current_is_excursion:
             print(f"  [key] phrase {n_next} returns home to {home}")
             return return_settings
-        if window.high is not None and window.high >= args.peak:
+        if window.peaks:
             if cooldown:
-                print(f"  [key] peak {window.high} ignored - cooldown, {cooldown} more phrase(s)")
+                print(f"  [key] peak ignored - cooldown, {cooldown} more phrase(s)")
                 return settings
             cooldown = args.peak_cooldown + 1
-            print(f"  [key] peak {window.high} >= {args.peak}: phrase {n_next} will be in {excursion}")
+            print(f"  [key] peak (max {window.high}): phrase {n_next} will be in {excursion}")
             return excursion_settings
         return settings
 
