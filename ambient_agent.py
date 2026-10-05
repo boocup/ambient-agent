@@ -95,6 +95,9 @@ def parse_args(argv=None):
                         "a lockout), in --track order; the agent learns which of its notes sounded (0 = none)")
     p.add_argument("--es8-walk", default="3,4", metavar="N[,N...]",
                    help="with --es8: ES-8 inputs summarized each phrase, e.g. random walks: '3,4' (0 = none)")
+    p.add_argument("--es8-expanded", action="store_true",
+                   help="with --es8: allow the ADAT channels an ES-6 (inputs) or ES-3 (outputs) expander adds, "
+                        "instead of only the ES-8's own 4 inputs and 8 outputs")
     p.add_argument("--es8-out", default="1:0.5", metavar="CH[:LEVEL]",
                    help="with --es8: the ES-8 output that gets the 100 ms peak trigger, and its level as a fraction "
                         "of full scale (0.5 is about 5 V if +-1.0 is about +-10 V)")
@@ -255,7 +258,7 @@ def run_conduct(args) -> int:
     if len(set(inputs)) != len(inputs):
         raise SystemExit("--es8-trig and --es8-walk must use different inputs")
     es8 = ES8(inputs, out_ch, out_level, dry_run=args.dry_run, cv_channels=tuple(r[0] for r in rates),
-              cv_slew=args.rate_slew)
+              cv_slew=args.rate_slew, expanded=args.es8_expanded)
 
     def pulse_es8(value: int):
         es8.pulse()
@@ -473,7 +476,7 @@ def main(argv=None) -> int:
             raise SystemExit("--es8 needs at least one input: --es8-trig, --es8-walk or --es8-follower")
         if len(set(inputs)) != len(inputs):
             raise SystemExit("--es8-follower, --es8-trig and --es8-walk must use different inputs")
-        es8 = ES8(inputs, out_ch, out_level, dry_run=args.dry_run)
+        es8 = ES8(inputs, out_ch, out_level, dry_run=args.dry_run, expanded=args.es8_expanded)
 
         def pulse_es8(value: int):
             es8.pulse()

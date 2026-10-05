@@ -97,6 +97,7 @@ def main() -> int:
     p.add_argument("--timeout", type=float, default=45.0, help="give up on an envelope after this many seconds")
     p.add_argument("--rise-only", action="store_true",
                    help="the signal rises and then stays high (or you only care about the rise): stop at the peak")
+    p.add_argument("--es8-expanded", action="store_true", help="allow ES-6/ES-3 expander channels")
     p.add_argument("--dry-run", action="store_true", help="send no MIDI and no voltages; just read the input")
     args = p.parse_args()
 
@@ -105,7 +106,8 @@ def main() -> int:
 
     volts = [float(v) for v in args.volts.split(",")]
     spare = 8 if args.out != 8 else 7      # an unused output for the (unused) trigger channel; the ES-8 has 8
-    es8 = ES8([args.measure], out_channel=spare, level=0.0, dry_run=args.dry_run, cv_channels=(args.out,), cv_slew=2.0)
+    es8 = ES8([args.measure], out_channel=spare, level=0.0, dry_run=args.dry_run, cv_channels=(args.out,), cv_slew=2.0,
+               expanded=args.es8_expanded)
     out_port = None
     if not args.dry_run:
         if not args.port:

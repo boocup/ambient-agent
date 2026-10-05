@@ -39,11 +39,12 @@ class ES8:
 
     def __init__(self, in_channels: list[int], out_channel: int, level: float, dry_run: bool = False,
                  name: str = "ES-8", cv_channels: tuple = (), cv_slew: float = 1.0,
-                 max_cv_volts: float = MAX_CV_VOLTS):
+                 max_cv_volts: float = MAX_CV_VOLTS, expanded: bool = False):
         index, info = find_es8(name)
         n_in, n_out = info["max_input_channels"], info["max_output_channels"]
-        if "es-8" in info["name"].lower():
-            # macOS reports more channels (12 in, 16 out) than the ES-8 has jacks: 4 inputs, 8 outputs.
+        if "es-8" in info["name"].lower() and not expanded:
+            # macOS reports more channels (12 in, 16 out) than the ES-8 has jacks: 4 inputs, 8 outputs. The rest are
+            # ADAT channels, which only carry signal when an expander (ES-6 for inputs, ES-3 for outputs) is connected.
             n_in, n_out = min(n_in, 4), min(n_out, 8)
         for c in in_channels:
             if not 1 <= c <= n_in:
