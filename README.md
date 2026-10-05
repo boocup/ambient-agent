@@ -134,7 +134,11 @@ appear an octave lower than this script names them; the MIDI numbers match.
 An ES-8 shows up to the Mac as an ordinary audio device with DC-coupled jacks,
 so the agent can read CV from its inputs and send triggers out of its outputs
 by itself (`es8.py`, using `sounddevice`). The ES-8 has 4 input and 8 output
-jacks (macOS reports more channels; the extras are not jacks). With `--es8`:
+jacks. macOS reports 12 in and 16 out because it also counts ADAT channels, which
+only carry signal when an expander is connected: an Expert Sleepers ES-6 adds
+inputs, an ES-3 adds outputs. Add `--es8-expanded` once one is connected to use
+those channels (I expect the ES-6's inputs to appear as input 5 onward; confirm
+that before relying on it). With `--es8`:
 
 ```bash
 python ambient_agent.py --port DIN --continuous --bpm 40 --key "Bb minor-pentatonic" \
