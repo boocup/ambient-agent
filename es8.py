@@ -18,6 +18,7 @@ import numpy as np
 import sounddevice as sd
 
 from feedback import AutoPeakDetector, Window
+from triggers import TriggerMatcher
 
 PULSE_SECONDS = 0.1
 FULL_SCALE_VOLTS = 10.0  # assumed: +-1.0 in the audio stream is about +-10 V on the jacks
@@ -65,7 +66,7 @@ class ES8:
         self.glitches = 0  # PortAudio under/overruns: a sign the Mac is too busy for steady real-time audio
         self._in_cols = [c - 1 for c in in_channels]
         self._out_col = out_channel - 1
-        self._blocks: deque = deque(maxlen=5000)  # (monotonic time, per-channel block means)
+        self._blocks: deque = deque(maxlen=5000)  # (monotonic time, per-channel block means, per-channel block peaks)
         self._pulse_left = 0
         self._lock = threading.Lock()
         self._stream = sd.Stream(device=index, samplerate=self.rate, blocksize=self.BLOCK, channels=(n_in, n_out),
@@ -76,7 +77,8 @@ class ES8:
         outdata.fill(0.0)
         if status:
             self.glitches += 1
-        self._blocks.append((time.monotonic(), indata[:, self._in_cols].mean(axis=0)))
+        chosen = indata[:, self._in_cols]
+        self._blocks.append((time.monotonic(), chosen.mean(axis=0), chosen.max(axis=0)))
         with self._lock:
             n = min(frames, self._pulse_left)
             if n:
@@ -137,28 +139,36 @@ class ES8:
 
 
 class ES8Feedback:
-    """Same interface as feedback.FeedbackListener, fed by ES-8 inputs.
+    """Same interface as feedback.FeedbackListener, fed by ES-8 inputs. Every input kind is optional:
 
-    The first input (the follower) drives peak detection and the level summary (scaled to 0-127 so --peak numbers
-    and the log lines match the MIDI version). Any further inputs are treated as slow "walks": each is summarized
-    as where it sits in its recent range and which way it moved.
+    follower  an envelope follower of the music: drives peak detection and a level summary (scaled to 0-127 so
+              --peak numbers match the MIDI version)
+    triggers  {voice name: input}: the trigger that actually fired for each voice (e.g. out of a lockout). Matched
+              against the notes the agent sent, so it knows which notes sounded
+    walks     slow random walks: each is summarized as where it sits in its recent range and which way it moved
     """
 
     POLL_SECONDS = 0.02
-    ACTIVE_BELOW, BUSY_ABOVE = 0.12, 0.40  # follower mean, as a fraction of full scale
+    ACTIVE_BELOW, BUSY_ABOVE = 0.12, 0.40   # follower mean, as a fraction of full scale
+    TRIG_ON, TRIG_OFF = 0.15, 0.05          # a trigger is a block peak above ON (about 1.5 V); re-arms below OFF
 
-    def __init__(self, es8: ES8, peak: int | str | None, debug: bool = False, on_peak=None, min_gap: float = 0.0,
-                 rack_hint: bool = True):
+    def __init__(self, es8: ES8, peak: int | str | None = None, debug: bool = False, on_peak=None,
+                 min_gap: float = 0.0, rack_hint: bool = True, follower: int | None = None,
+                 walks: tuple = (), triggers: dict | None = None):
         self.es8, self.peak, self.debug, self.on_peak, self.min_gap = es8, peak, debug, on_peak, min_gap
         self.rack_hint = rack_hint
-        self.detector = AutoPeakDetector() if peak == "auto" else None
-        self.n_walks = len(es8.in_channels) - 1
+        self._col = {ch: i for i, ch in enumerate(es8.in_channels)}
+        self.follower, self.walks, self.triggers = follower, list(walks), dict(triggers or {})
+        self.detector = AutoPeakDetector() if (follower and peak == "auto") else None
+        self.matcher = TriggerMatcher(list(self.triggers)) if self.triggers else None
+        self._trig_high = {v: False for v in self.triggers}
         self._lock = threading.Lock()
+        self._blocks = 0
         self._f: list[float] = []
-        self._w: list[list[float]] = [[] for _ in range(self.n_walks)]
+        self._w: list[list[float]] = [[] for _ in self.walks]
         self._peaks = 0
         self._last_peak_t = -1e9
-        self._walk_history: list[list[tuple[float, float]]] = [[] for _ in range(self.n_walks)]  # (low, high)
+        self._walk_history: list[list[tuple[float, float]]] = [[] for _ in self.walks]  # (low, high)
         self._last_debug = 0.0
         self.t0 = time.monotonic()
         self._stop = threading.Event()
@@ -169,22 +179,47 @@ class ES8Feedback:
         self._stop.set()
         self._thread.join(timeout=1)
 
+    def note_sent(self, voice: str, t: float):
+        """The agent sent a note on this voice at monotonic time t."""
+        if self.matcher:
+            self.matcher.note_sent(voice, t)
+
     @staticmethod
     def _scaled(value: float) -> int:
         return int(min(127, max(0, round(value * 127))))
 
     def _poll(self):
         while not self._stop.is_set():
-            for stamp, means in self.es8.drain():
-                self._record(stamp - self.t0, float(means[0]), [float(m) for m in means[1:]])
+            for stamp, means, peaks in self.es8.drain():
+                self._process_block(stamp, means, peaks)
             time.sleep(self.POLL_SECONDS)
 
-    def _record(self, t: float, follower: float, walks: list[float]):
+    def _process_block(self, stamp: float, means, peaks):
+        """One audio block: `stamp` is when it arrived (monotonic), means/peaks are per chosen input."""
+        t = stamp - self.t0
+        with self._lock:
+            self._blocks += 1
+        for voice, channel in self.triggers.items():
+            col = self._col[channel]
+            high = self._trig_high[voice]
+            if not high and peaks[col] >= self.TRIG_ON:
+                self._trig_high[voice] = True
+                self.matcher.trigger_seen(voice, stamp - 0.5 * self.es8.BLOCK / self.es8.rate)  # mid-block
+                if self.debug:
+                    print(f"  [es8 {t:7.2f}s] trigger on input {channel} ({voice})")
+            elif high and peaks[col] < self.TRIG_OFF:
+                self._trig_high[voice] = False
+        walks = [float(means[self._col[c]]) for c in self.walks]
+        with self._lock:
+            for series, value in zip(self._w, walks):
+                series.append(value)
+        if self.follower:
+            self._record_follower(t, float(means[self._col[self.follower]]), walks)
+
+    def _record_follower(self, t: float, follower: float, walks: list[float]):
         scaled = self._scaled(follower)
         with self._lock:
             self._f.append(follower)
-            for series, value in zip(self._w, walks):
-                series.append(value)
             if self.detector is not None:
                 is_peak = self.detector.update(t, scaled)
             else:
@@ -195,7 +230,7 @@ class ES8Feedback:
                 self._last_peak_t = t
         if self.debug and t - self._last_debug >= 0.5:
             self._last_debug = t
-            walk_text = "".join(f"  in{ch} {v:+.3f}" for ch, v in zip(self.es8.in_channels[1:], walks))
+            walk_text = "".join(f"  in{ch} {v:+.3f}" for ch, v in zip(self.walks, walks))
             print(f"  [es8 {t:7.2f}s] follower {follower:+.3f} ({follower * FULL_SCALE_VOLTS:+.1f} V){walk_text}")
         if announce:
             level = self.detector.describe() if self.detector else f">= {self.peak}"
@@ -205,25 +240,66 @@ class ES8Feedback:
 
     def take_window(self) -> Window:
         with self._lock:
+            blocks, self._blocks = self._blocks, 0
             f, self._f = self._f, []
-            w, self._w = self._w, [[] for _ in range(self.n_walks)]
+            w, self._w = self._w, [[] for _ in self.walks]
             peaks, self._peaks = self._peaks, 0
             marks = self.detector.describe() if self.detector else ""
         glitches, self.es8.glitches = self.es8.glitches, 0
-        if not f:
+        if not blocks:
             return Window(0, None, None, None, peaks, marks, "no ES-8 audio blocks received")
-        fa = np.asarray(f)
-        extra, hint = self._walk_summary(w, float(fa.mean()))
+        fa = np.asarray(f) if f else None
+        extras, hint_parts = [], []
+        if self.matcher:
+            text, hint = self._trigger_summary()
+            extras.append(text)
+            hint_parts.append(hint)
+        walk_extra, walk_hint = self._walk_summary(w)
+        extras.append(walk_extra)
+        hint_parts.append(walk_hint)
+        if fa is not None:
+            hint_parts.insert(0, self._activity_hint(float(fa.mean())))
         if glitches:
-            extra += f"; {glitches} audio glitch(es)"
-        return Window(len(f), self._scaled(fa.min()), self._scaled(fa.max()), self._scaled(fa.mean()) * 1.0,
-                      peaks, marks, extra.lstrip("; "), hint if self.rack_hint else "")
+            extras.append(f"{glitches} audio glitch(es)")
+        hint = " ".join(h for h in hint_parts if h)
+        if hint:
+            hint = ("Rack feedback from the modular since the last phrase: " + hint + " Treat this as a gentle nudge, "
+                    "not an order.")
+        return Window(blocks, self._scaled(fa.min()) if fa is not None else None,
+                      self._scaled(fa.max()) if fa is not None else None,
+                      self._scaled(fa.mean()) * 1.0 if fa is not None else None,
+                      peaks, marks, "; ".join(e for e in extras if e), hint if self.rack_hint else "")
 
-    def _walk_summary(self, walks: list[list[float]], follower_mean: float):
+    def _activity_hint(self, follower_mean: float) -> str:
         activity = ("quiet" if follower_mean < self.ACTIVE_BELOW
                     else "very active" if follower_mean > self.BUSY_ABOVE else "moderately active")
+        return (f"the music was {activity} (envelope follower); if the rack was very active, leave more space, "
+                f"if quiet, be a little busier.")
+
+    def _trigger_summary(self) -> tuple[str, str]:
+        stats = self.matcher.take(time.monotonic())
+        parts, hint_bits, blocked_any = [], [], False
+        for voice, st in stats.items():
+            if not self.matcher.ever_seen[voice]:
+                parts.append(f"{voice}: no trigger ever seen on input {self.triggers[voice]} (patched?)")
+                continue
+            if not st.sent:
+                continue
+            lat = f", ~{st.latency_ms:.0f} ms delay" if st.latency_ms is not None else ""
+            parts.append(f"{voice}: {st.fired}/{st.sent} notes sounded{lat}" + (f", {st.extra} extra" if st.extra else ""))
+            hint_bits.append(f"{voice} {st.fired} of {st.sent}")
+            blocked_any |= st.blocked > 0
+        hint = ""
+        if hint_bits:
+            hint = "notes that actually sounded (" + ", ".join(hint_bits) + ")."
+            if blocked_any:
+                hint += (" The rest were blocked because an envelope was still running; leave more room between "
+                         "notes so they can all sound.")
+        return "; ".join(parts), hint
+
+    def _walk_summary(self, walks: list[list[float]]) -> tuple[str, str]:
         parts, known_notes = [], []
-        for i, (channel, series) in enumerate(zip(self.es8.in_channels[1:], walks)):
+        for i, (channel, series) in enumerate(zip(self.walks, walks)):
             if not series:
                 continue
             wa = np.asarray(series)
@@ -241,12 +317,8 @@ class ES8Feedback:
                          + (f", {where} in its range" if known else ""))
             if known:
                 known_notes.append(f"input {channel} is {where} and {trend}")
-        walk_text = ""
+        hint = ""
         if known_notes:
-            walk_text = (" Slow random walks in the rack: " + "; ".join(known_notes) + ". Let them gently color the "
-                         "music (register, density, dynamics); the first may nudge the melody up when high and down "
-                         "when low.")
-        hint = (f"Rack feedback from the modular since the last phrase: the music was {activity}"
-                f" (envelope follower).{walk_text} If the rack was very active, leave more space; if quiet, be a "
-                f"little busier. Treat this as a gentle nudge, not an order.")
+            hint = ("Slow random walks in the rack: " + "; ".join(known_notes) + ". Let them gently color the music "
+                    "(register, density, dynamics); the first may nudge the melody up when high and down when low.")
         return "; ".join(parts), hint

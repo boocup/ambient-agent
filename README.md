@@ -120,9 +120,11 @@ appear an octave lower than this script names them; the MIDI numbers match.
 | `--peak-out CH:CC[:LEVEL]` | `15:20:64` | On each peak, pulse this CC to LEVEL, then 0 after 100 ms, out `--port` for the rack (64 ≈ 5 V in VCV's MIDI CC→CV); `off` to disable |
 | `--feedback-debug` | off | Print every feedback value (CC, or ES-8 readings twice a second) |
 | `--es8` | off | Use an Expert Sleepers ES-8 directly (no Hapax, no VCV Rack); see "ES-8 direct" below |
-| `--es8-follower N` | 1 | With `--es8`: the ES-8 input carrying the envelope follower; peaks are found in it |
-| `--es8-walk N[,N...]` | 2 | With `--es8`: more inputs summarized every phrase, e.g. random walks: `2` or `3,4` (0 = none) |
+| `--es8-follower N` | 0 (none) | With `--es8`: an input carrying an envelope follower of the music; peaks in it send a trigger out |
+| `--es8-trig N[,N...]` | `1,2` | With `--es8`: inputs carrying each voice's trigger as it actually fired, in `--track` order; the agent learns which of its notes sounded (0 = none) |
+| `--es8-walk N[,N...]` | `3,4` | With `--es8`: inputs summarized every phrase, e.g. random walks (0 = none) |
 | `--es8-out CH[:LEVEL]` | `1:0.5` | With `--es8`: the output that gets the 100 ms peak trigger, and its level as a fraction of full scale |
+| `--shift-on SECTIONS` | off | With `--es8` and `--form on`: send the trigger out `--es8-out` when one of these sections begins and again when it ends, e.g. `contrast` |
 | `--peak-gap SECONDS` | 0 | With `--feedback` or `--es8`: at least this long between peak triggers |
 | `--rack-state on\|off` | `on` | With `--es8`: tell the model how active the rack was and where the walk sits, as a gentle nudge |
 
@@ -130,25 +132,39 @@ appear an octave lower than this script names them; the MIDI numbers match.
 
 An ES-8 shows up to the Mac as an ordinary audio device with DC-coupled jacks,
 so the agent can read CV from its inputs and send triggers out of its outputs
-by itself (`es8.py`, using `sounddevice`). With `--es8`:
+by itself (`es8.py`, using `sounddevice`). The ES-8 has 4 input and 8 output
+jacks (macOS reports more channels; the extras are not jacks). With `--es8`:
 
 ```bash
 python ambient_agent.py --port DIN --continuous --bpm 40 --key "Bb minor-pentatonic" \
   --track 8:melody:C3-C5 --track 9:bass:C1-C3 --es8
 ```
 
-- **Input 1** (`--es8-follower`) carries an envelope follower of the music. Peaks
-  are found in it the same way as in the MIDI version (`--peak auto`, or a number
-  on a 0-127 scale), and each peak sends a 100 ms trigger out **output 1**
-  (`--es8-out`). With `--peak-gap 90` that is at most one trigger per 90 s.
-- **Further inputs** (`--es8-walk 3,4`) are summarized every phrase, each on its
-  own: its range, which way it moved, and where it sits in its recent range.
-- With `--rack-state on` the model is told, as a gentle nudge, how active the
-  rack was and where the walk sits (a very active rack: leave space; a high
-  walk: nudge the melody up).
+Every input kind is optional, and the defaults match one particular rig:
+
+- **Voice triggers** (`--es8-trig 1,2`): the trigger of each voice as it actually
+  fired, in `--track` order, for example out of a lockout that blocks a new
+  trigger while an envelope is still running. The agent matches them against the
+  notes it sent (each trigger belongs to the nearest note sent shortly before
+  it), so each phrase's log line says how many notes sounded, e.g.
+  `melody: 3/5 notes sounded, ~40 ms delay`, and the model is told when notes
+  were blocked so it can leave more room. Block peaks are used, so a trigger of a
+  few milliseconds is not missed. An input that has never shown a trigger is
+  reported as "not patched", not as blocked notes.
+- **Walks** (`--es8-walk 3,4`): each is summarized every phrase: its range, which
+  way it moved, and where it sits in its recent range.
+- **Envelope follower** (`--es8-follower N`, off by default): peaks in it (the
+  same `--peak auto` detection as the MIDI version, or a number on a 0-127
+  scale) send a 100 ms trigger out **output 1** (`--es8-out`); `--peak-gap 90`
+  allows at most one per 90 s.
+- **Shift on sections** (`--shift-on contrast`): the same output-1 trigger is
+  sent when a contrast section begins and again when it ends, for example to
+  step a shift in the rack up for the contrast phrases and back down after. It
+  assumes each trigger steps the shift (a toggle), and that it starts unshifted.
+- With `--rack-state on` the model is told, as a gentle nudge, which notes
+  sounded, how active the rack was (if a follower is used) and where the walks sit.
 - `--es8` and `--feedback` (the Hapax route) are alternatives.
 
-The ES-8 has 4 input and 8 output jacks (macOS reports more channels; the extras are not jacks).
 Voltages assume the ES-8's +-1.0 is about +-10 V; calibrate the trigger level
 with a meter or scope. The trigger level that worked for a Doepfer A-151 was
 0.5 (about 5 V); a full 10 V made it step twice. The output always returns to
@@ -289,6 +305,7 @@ before anything is played (`music.py`, `clean_phrase`):
 - `music.py` - note names, scales, phrase cleanup
 - `feedback.py` - listens for a CC from the rack and summarizes it per phrase
 - `es8.py` - reads CV from an ES-8's inputs, sends triggers and slow control voltages out of its outputs
+- `triggers.py` - matches the notes the agent sent with the triggers that actually fired
 - `calibrate_rate.py` - measures an envelope's rise/fall times against a rate voltage from the ES-8
 - `form.py` - sections, register windows, phrase memory and the novelty score
 

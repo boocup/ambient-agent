@@ -57,12 +57,15 @@ class Player:
         self.port = port
         self.bpm = bpm
         self.sounding: dict[int, int | None] = {ch: None for ch in channels}  # channel (0-15) -> gated note
+        self.on_note = None  # optional callback(channel, monotonic time) for every note-on sent
         self._lock = threading.Lock()
 
     def _send(self, msg_type: str, channel: int, note: int, velocity: int = 0):
         with self._lock:
             self.port.send(mido.Message(msg_type, channel=channel, note=note, velocity=velocity))
             self.sounding[channel] = note if msg_type == "note_on" else None
+        if msg_type == "note_on" and self.on_note:
+            self.on_note(channel, time.monotonic())
 
     def send_cc(self, channel: int, control: int, value: int):
         """Send a CC on any channel (0-15), safely alongside playback."""

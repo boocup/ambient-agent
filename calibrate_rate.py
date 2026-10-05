@@ -55,7 +55,7 @@ def measure_envelope(es8, out_port, midi_channel, note, base_seconds=1.0, timeou
     """Trigger once and record until the envelope has finished (or the timeout)."""
     es8.drain()
     time.sleep(base_seconds)
-    baseline = sorted(float(m[0]) for _, m in es8.drain())
+    baseline = sorted(float(m[0]) for _, m, _p in es8.drain())
     base = baseline[len(baseline) // 2] if baseline else 0.0
     es8.drain()
     t0 = time.monotonic()
@@ -66,7 +66,7 @@ def measure_envelope(es8, out_port, midi_channel, note, base_seconds=1.0, timeou
     series: list[tuple[float, float]] = []
     below_since = None
     while True:
-        for stamp, means in es8.drain():
+        for stamp, means, _peaks in es8.drain():
             series.append((stamp - t0, float(means[0])))
         now = time.monotonic() - t0
         result = analyze(series, base)

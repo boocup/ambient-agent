@@ -25,6 +25,8 @@ class Window:
     def describe(self) -> str:
         if not self.count:
             return "no CC received" if not self.extra else self.extra
+        if self.average is None:                       # no follower: only the extras are worth printing
+            return self.extra or "no data"
         text = f"{self.count} msgs, min {self.low}, avg {self.average:.0f}, max {self.high}, peaks {self.peaks}"
         text += f" ({self.marks})" if self.marks else ""
         return text + (f"; {self.extra}" if self.extra else "")

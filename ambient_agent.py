@@ -85,14 +85,21 @@ def parse_args(argv=None):
     p.add_argument("--es8", action="store_true",
                    help="use an Expert Sleepers ES-8 directly instead of the Hapax/VCV route: read the envelope "
                         "follower (and a second input) and send peak triggers out of an ES-8 output")
-    p.add_argument("--es8-follower", type=int, default=1, metavar="N",
-                   help="with --es8: the ES-8 input carrying the envelope follower (peaks are found in it)")
-    p.add_argument("--es8-walk", default="2", metavar="N[,N...]",
-                   help="with --es8: more ES-8 inputs to summarize each phrase, e.g. random walks: '2' or '3,4' "
-                        "(0 = none)")
+    p.add_argument("--es8-follower", type=int, default=0, metavar="N",
+                   help="with --es8: the ES-8 input carrying an envelope follower of the music; peaks are found in "
+                        "it and send a trigger out (0 = none, the default)")
+    p.add_argument("--es8-trig", default="1,2", metavar="N[,N...]",
+                   help="with --es8: the ES-8 inputs carrying each voice's trigger as it actually fired (e.g. out of "
+                        "a lockout), in --track order; the agent learns which of its notes sounded (0 = none)")
+    p.add_argument("--es8-walk", default="3,4", metavar="N[,N...]",
+                   help="with --es8: ES-8 inputs summarized each phrase, e.g. random walks: '3,4' (0 = none)")
     p.add_argument("--es8-out", default="1:0.5", metavar="CH[:LEVEL]",
                    help="with --es8: the ES-8 output that gets the 100 ms peak trigger, and its level as a fraction "
                         "of full scale (0.5 is about 5 V if +-1.0 is about +-10 V)")
+    p.add_argument("--shift-on", default="", metavar="SECTIONS",
+                   help="with --es8 and --form on: send the trigger out --es8-out when one of these sections "
+                        "begins and again when it ends, e.g. 'contrast' (so contrast phrases sit a fifth up if the "
+                        "trigger steps your shift); sections: statement, contrast, space, return")
     p.add_argument("--peak-gap", type=float, default=0.0, metavar="SECONDS",
                    help="with --feedback or --es8: at least this long between peak triggers (0 = no limit)")
     p.add_argument("--rack-state", choices=["on", "off"], default="on",
@@ -267,6 +274,13 @@ def main(argv=None) -> int:
         settings, note=f"the previous phrase was a one-phrase excursion to {excursion}; settle back home into {home}.",
     )
 
+    shift_sections = {x.strip() for x in args.shift_on.split(",") if x.strip()}
+    if shift_sections:
+        if not shift_sections <= {"statement", "contrast", "space", "return"}:
+            raise SystemExit("--shift-on takes section names: statement, contrast, space, return")
+        if not args.es8 or args.form != "on":
+            raise SystemExit("--shift-on needs --es8 and --form on")
+
     if args.dry_run:
         port, port_label = DryRunPort(), "dry run (printing only)"
     else:
@@ -317,13 +331,23 @@ def main(argv=None) -> int:
             raise SystemExit("--es8 and --feedback are alternatives (ES-8 direct vs the Hapax route); use one")
         from es8 import ES8, ES8Feedback  # imported here so sounddevice is only needed with --es8
         out_ch, out_level = parse_es8_out(args.es8_out)
-        try:
-            walks = [int(x) for x in args.es8_walk.split(",") if x.strip() not in ("", "0")]
-        except ValueError:
-            raise SystemExit(f"--es8-walk must be input numbers like 2 or 3,4 (or 0), got {args.es8_walk!r}")
-        inputs = [args.es8_follower] + walks
+        def parse_inputs(text: str, flag: str) -> list[int]:
+            try:
+                return [int(x) for x in text.split(",") if x.strip() not in ("", "0")]
+            except ValueError:
+                raise SystemExit(f"{flag} must be input numbers like 1,2 (or 0), got {text!r}")
+
+        walks = parse_inputs(args.es8_walk, "--es8-walk")
+        trig_inputs = parse_inputs(args.es8_trig, "--es8-trig")
+        if len(trig_inputs) > len(tracks):
+            raise SystemExit(f"--es8-trig lists {len(trig_inputs)} inputs but there are only {len(tracks)} tracks")
+        trig_map = {t.name: n for t, n in zip(tracks, trig_inputs)}   # voice name -> input, in track order
+        follower = args.es8_follower or None
+        inputs = ([follower] if follower else []) + trig_inputs + walks
+        if not inputs:
+            raise SystemExit("--es8 needs at least one input: --es8-trig, --es8-walk or --es8-follower")
         if len(set(inputs)) != len(inputs):
-            raise SystemExit("--es8-follower and --es8-walk must be different inputs")
+            raise SystemExit("--es8-follower, --es8-trig and --es8-walk must use different inputs")
         es8 = ES8(inputs, out_ch, out_level, dry_run=args.dry_run)
 
         def pulse_es8(value: int):
@@ -331,9 +355,14 @@ def main(argv=None) -> int:
             print(f"  [feedback] -> trigger on ES-8 output {out_ch}" + (" (dry run: not sent)" if args.dry_run else ""))
 
         feedback = ES8Feedback(es8, parse_peak(args.peak), args.feedback_debug, on_peak=pulse_es8,
-                               min_gap=args.peak_gap, rack_hint=args.rack_state == "on")
-        print(f"ES-8 ({es8.device_name}, {es8.rate} Hz): input {args.es8_follower} = envelope follower"
-              + (f", input{'s' if len(walks) > 1 else ''} {','.join(map(str, walks))} = walk" if walks else "")
+                               min_gap=args.peak_gap, rack_hint=args.rack_state == "on",
+                               follower=follower, walks=walks, triggers=trig_map)
+        by_channel = {t.channel - 1: t.name for t in tracks}
+        player.on_note = lambda ch, when: feedback.note_sent(by_channel.get(ch, ""), when)
+        listed = ([f"input {follower} = envelope follower"] if follower else [])
+        listed += [f"input {n} = {name} trigger" for name, n in trig_map.items()]
+        listed += ([f"input{'s' if len(walks) > 1 else ''} {','.join(map(str, walks))} = walk"] if walks else [])
+        print(f"ES-8 ({es8.device_name}, {es8.rate} Hz): " + ", ".join(listed)
               + f"; output {out_ch} gets a 100 ms trigger at {out_level:g} of full scale "
                 f"(~{out_level * 10:.1f} V if +-1.0 is +-10 V)")
     elif args.feedback:
@@ -387,6 +416,7 @@ def main(argv=None) -> int:
         return shaped, (current if plan.develop else None), plan
 
     cooldown = 0
+    shifted = False   # whether the rack's shift is currently stepped up (assumes each trigger steps it)
     rack_hint = ""  # what the rack did last phrase, as a sentence for the model (--es8 with --rack-state on)
 
     def next_settings(n_next: int, current_is_excursion: bool) -> Settings:
@@ -443,6 +473,13 @@ def main(argv=None) -> int:
                 upcoming_settings = next_settings(n + 1, current_settings is excursion_settings)
                 shaped, previous_shown, upcoming_plan = plan_next(upcoming_settings, current)
                 upcoming = Background(compose, previous_shown, shaped, list(history), f"phrase {n + 1}")
+            if shift_sections and current_plan:
+                want = current_plan.section in shift_sections
+                if want != shifted:
+                    shifted = want
+                    es8.pulse()
+                    print(f"  [shift] {current_plan.section} {'begins' if want else 'is over'}: trigger on ES-8 "
+                          f"output {out_ch}" + (" (dry run: not sent)" if args.dry_run else ""))
             player.play(channel_parts(current), settings.beats)
             played.append(current)
             if upcoming is None:
