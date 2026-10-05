@@ -176,3 +176,24 @@ class FeedbackListener:
         self._stop.set()
         self._thread.join(timeout=1)
         self._midi_in.close_port()
+
+
+class CombinedFeedback:
+    """Two feedback sources at once, e.g. a follower read as a MIDI CC (via a Hapax) plus ES-8 triggers and walks.
+
+    The first source supplies the level statistics and peaks; the second supplies the extra log text and the
+    hint for the model. Same interface as a single source.
+    """
+
+    def __init__(self, primary, secondary):
+        self.primary, self.secondary = primary, secondary
+
+    def take_window(self) -> Window:
+        a, b = self.primary.take_window(), self.secondary.take_window()
+        extra = "; ".join(x for x in (a.extra, b.extra) if x)
+        return Window(a.count, a.low, a.high, a.average, a.peaks + b.peaks, a.marks or b.marks, extra,
+                      " ".join(x for x in (a.hint, b.hint) if x))
+
+    def close(self):
+        self.primary.close()
+        self.secondary.close()

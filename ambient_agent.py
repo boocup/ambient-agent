@@ -21,7 +21,7 @@ import mido
 
 from composer import (DEFAULT_MODEL, DEFAULT_OLLAMA_MODEL, ClaudeComposer, MockComposer,
                       OllamaComposer, Phrase, Settings, Track)
-from feedback import FeedbackListener
+from feedback import CombinedFeedback, FeedbackListener
 from form import (FormPlanner, PhraseSummary, anchor_text, history_text, novelty, similarity, snap_to_rhythm,
                   summarize, window_tracks)
 from music import clean_phrase, format_phrase, note_name, parse_key, parse_note, pc_name, scale_pitches, use_flats
@@ -314,7 +314,7 @@ def main(argv=None) -> int:
     print(f"Composer: {composer_label}. Ctrl+C to stop.")
     parse_peak(args.peak)
     peak_out = parse_peak_out(args.peak_out)  # validate even when unused, so typos surface
-    if not args.feedback:
+    if not args.feedback or args.es8:    # with --es8 the peak trigger goes out an ES-8 output, not as a CC
         peak_out = None
 
     def pulse_peak_out(value: int):
@@ -326,9 +326,10 @@ def main(argv=None) -> int:
 
     feedback = None
     es8 = None
+    midi_feedback = None
     if args.es8:
-        if args.feedback:
-            raise SystemExit("--es8 and --feedback are alternatives (ES-8 direct vs the Hapax route); use one")
+        if args.feedback and args.es8_follower:
+            raise SystemExit("--feedback already supplies the follower; use --es8-follower 0 with it")
         from es8 import ES8, ES8Feedback  # imported here so sounddevice is only needed with --es8
         out_ch, out_level = parse_es8_out(args.es8_out)
         def parse_inputs(text: str, flag: str) -> list[int]:
@@ -354,20 +355,23 @@ def main(argv=None) -> int:
             es8.pulse()
             print(f"  [feedback] -> trigger on ES-8 output {out_ch}" + (" (dry run: not sent)" if args.dry_run else ""))
 
-        feedback = ES8Feedback(es8, parse_peak(args.peak), args.feedback_debug, on_peak=pulse_es8,
-                               min_gap=args.peak_gap, rack_hint=args.rack_state == "on",
-                               follower=follower, walks=walks, triggers=trig_map)
+        es8_feedback = ES8Feedback(es8, parse_peak(args.peak), args.feedback_debug, on_peak=pulse_es8,
+                                   min_gap=args.peak_gap, rack_hint=args.rack_state == "on",
+                                   follower=follower, walks=walks, triggers=trig_map)
+        feedback = es8_feedback
         by_channel = {t.channel - 1: t.name for t in tracks}
-        player.on_note = lambda ch, when: feedback.note_sent(by_channel.get(ch, ""), when)
+        player.on_note = lambda ch, when: es8_feedback.note_sent(by_channel.get(ch, ""), when)
         listed = ([f"input {follower} = envelope follower"] if follower else [])
         listed += [f"input {n} = {name} trigger" for name, n in trig_map.items()]
         listed += ([f"input{'s' if len(walks) > 1 else ''} {','.join(map(str, walks))} = walk"] if walks else [])
         print(f"ES-8 ({es8.device_name}, {es8.rate} Hz): " + ", ".join(listed)
               + f"; output {out_ch} gets a 100 ms trigger at {out_level:g} of full scale "
                 f"(~{out_level * 10:.1f} V if +-1.0 is +-10 V)")
-    elif args.feedback:
-        feedback = open_feedback(args.feedback, parse_peak(args.peak), args.feedback_debug, args.key_change,
-                                 on_peak=pulse_peak_out if peak_out else None, min_gap=args.peak_gap)
+    if args.feedback:    # the MIDI route (e.g. a Hapax sending a CC): alone, or together with --es8
+        on_peak = pulse_es8 if es8 else (pulse_peak_out if peak_out else None)
+        midi_feedback = open_feedback(args.feedback, parse_peak(args.peak), args.feedback_debug, args.key_change,
+                                      on_peak=on_peak, min_gap=args.peak_gap)
+        feedback = CombinedFeedback(midi_feedback, es8_feedback) if es8 else midi_feedback
     if peak_out:
         print(f"Peak out: CC{peak_out[1]} pulse to {peak_out[2]} (~{peak_out[2] * 10 / 127:.1f} V in VCV) "
               f"on channel {peak_out[0] + 1} via {port_label}")

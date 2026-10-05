@@ -163,7 +163,20 @@ Every input kind is optional, and the defaults match one particular rig:
   assumes each trigger steps the shift (a toggle), and that it starts unshifted.
 - With `--rack-state on` the model is told, as a gentle nudge, which notes
   sounded, how active the rack was (if a follower is used) and where the walks sit.
-- `--es8` and `--feedback` (the Hapax route) are alternatives.
+- **`--es8` with `--feedback`:** the two can run together. The follower then comes
+  from a MIDI CC (for example a Hapax with the follower on CV 1 sending CC 3 on
+  channel 15 over USB), and peaks in it send the trigger out the ES-8 output, while
+  the ES-8 still reads the voice triggers and walks:
+
+  ```bash
+  python ambient_agent.py --port DIN --continuous --bpm 40 --key "Bb minor-pentatonic" \
+    --track 8:melody:C3-C5 --track 9:bass:C1-C3 --es8 --feedback HAPAX:15:3
+  ```
+
+  A Hapax CV input only takes about +-5 V and sends 128 steps, so keep the follower
+  under about 5 V (attenuate it first) or its peaks will be flat-topped, and save
+  the Hapax project with the CV 1 to CC 3 route sent out USB on channel 15.
+  `--es8-follower` can't be combined with `--feedback`.
 
 Voltages assume the ES-8's +-1.0 is about +-10 V; calibrate the trigger level
 with a meter or scope. The trigger level that worked for a Doepfer A-151 was
