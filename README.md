@@ -322,6 +322,16 @@ before anything is played (`music.py`, `clean_phrase`):
 - `calibrate_rate.py` - measures an envelope's rise/fall times against a rate voltage from the ES-8
 - `form.py` - sections, register windows, phrase memory and the novelty score
 
+## When the network drops
+
+Claude is composed over the internet, and a dropped connection must not end a
+live session. A temporary failure (no connection, a rate limit, a server error)
+is retried after 2, 5 and 12 seconds, on top of the library's own quick retries;
+a stalled request times out after 45 seconds. If Claude still can't be reached,
+that phrase is an offline variation of the last one and the next phrase tries
+Claude again, so the music keeps going. The log shows `[network]` lines. A bad
+API key or a bad request is not temporary and still stops the agent.
+
 ## Notes
 
 - Each phrase is one API call with `claude-sonnet-5-5` at medium effort. At

@@ -155,7 +155,8 @@ def _parse_phrase(text: str, tracks: list[Track]) -> Phrase:
 
 class ClaudeComposer:
     def __init__(self, model: str = DEFAULT_MODEL):
-        self.client = anthropic.Anthropic()
+        # A stalled connection must not hang a live session (the library's default timeout is 10 minutes).
+        self.client = anthropic.Anthropic(timeout=45.0, max_retries=2)
         self.model = model
 
     def compose(self, s: Settings, previous: Phrase | None) -> Phrase:

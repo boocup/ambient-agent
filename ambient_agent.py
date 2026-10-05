@@ -115,6 +115,27 @@ def parse_args(argv=None):
     return args
 
 
+# Network trouble, rate limits and server errors are temporary; a bad key or request is not.
+TRANSIENT_ERRORS = (anthropic.APIConnectionError, anthropic.RateLimitError, anthropic.InternalServerError)
+RETRY_DELAYS = (2, 5, 12)  # seconds between attempts, after the library's own quick retries
+
+
+def compose_with_fallback(composer, fallback, s, previous, label="phrase", delays=RETRY_DELAYS, sleep=time.sleep):
+    """Ask `composer` for a phrase; on a temporary failure retry, and finally play an offline variation instead
+    of letting one dropped connection end the session."""
+    for attempt in range(len(delays) + 1):
+        try:
+            return composer.compose(s, previous)
+        except TRANSIENT_ERRORS as e:
+            more = attempt < len(delays)
+            print(f"  [network] {label}: {type(e).__name__}" + (f" - retrying in {delays[attempt]} s" if more else ""))
+            if more:
+                sleep(delays[attempt])
+    print(f"  [network] {label}: couldn't reach the composer; playing an offline variation of the last phrase "
+          f"and trying again next phrase")
+    return fallback.compose(s, previous)
+
+
 class Background:
     """Runs one composition on a daemon thread, so Ctrl+C never waits on the API."""
 
@@ -377,6 +398,8 @@ def main(argv=None) -> int:
               f"on channel {peak_out[0] + 1} via {port_label}")
     print()
 
+    offline = MockComposer(args.seed)   # stand-in when the real composer can't be reached
+
     def compose(previous: Phrase | None, s: Settings, recent: list, label: str = "phrase") -> Phrase:
         def clean(phrase: Phrase) -> Phrase:
             for t in s.tracks:
@@ -386,7 +409,7 @@ def main(argv=None) -> int:
                 phrase.parts[t.name] = clean_phrase(notes, s.beats, t.scale)
             return phrase
 
-        phrase = clean(composer.compose(s, previous))
+        phrase = clean(compose_with_fallback(composer, offline, s, previous, label))
         if args.retry_similar and recent:
             worst = max(similarity(summarize(0, "", phrase.parts), r) for r in recent[-4:])
             if worst > args.retry_similar:
@@ -395,7 +418,7 @@ def main(argv=None) -> int:
                     s, note=(s.note + " " if s.note else "")
                     + "Your first attempt was too similar to a recent phrase. Write something clearly different: "
                       "a new rhythm, a new contour, a different number of notes.")
-                phrase = clean(composer.compose(again, previous))
+                phrase = clean(compose_with_fallback(composer, offline, again, previous, label))
         return phrase
 
     # Form: where we are in the larger shape, a memory of recent phrases, and the motif a RETURN echoes.
