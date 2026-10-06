@@ -28,7 +28,7 @@ option; this file is only what a fresh session needs.
 
 ## Working with this user
 - Retired Technology Director; music (Eurorack) is now a hobby. Plain language, honest answers over agreeable ones, push back.
-- TEXT ONLY: no spoken replies unless asked (a Kokoro voice exists in ~/kokoro-voice).
+- TEXT ONLY: we just type to each other; no spoken replies.
 - Check hardware facts and prices before building (I got the ES-8 jack count and a price wrong).
   Build small steps and let them listen between steps. Say when I am waiting on something.
 - Keep command output short; do not print huge listings.
