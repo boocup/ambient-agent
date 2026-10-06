@@ -27,7 +27,7 @@ option; this file is only what a fresh session needs.
   Read the right manual before stating a hardware fact (no Dice manual there yet, only Marbles).
 
 ## Working with this user
-- Retired hobbyist. Plain language, honest answers over agreeable ones, push back.
+- Retired Technology Director; music (Eurorack) is now a hobby. Plain language, honest answers over agreeable ones, push back.
 - TEXT ONLY: no spoken replies unless asked (a Kokoro voice exists in ~/kokoro-voice).
 - Check hardware facts and prices before building (I got the ES-8 jack count and a price wrong).
   Build small steps and let them listen between steps. Say when I am waiting on something.
