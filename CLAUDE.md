@@ -9,7 +9,12 @@ option; this file is only what a fresh session needs.
 - Direction (2026-10-06): the user pulled the AI patch from the rack and wants to start fresh WITHOUT
   local or hosted AI (a Marbles clone, "Dice", plus the rack). Hold off on changing or slimming down
   the agent until they ask. Everything built is committed; delete nothing.
+- Dice is a clone of Mutable Instruments Marbles; use `marbles_user_manual.pdf` (see manuals below).
 - Open question: does Dice have an external clock input, so its pitch advances only on accepted notes?
+  Per the Marbles manual: yes. The X section (the three pitch voltages) has its own external clock input,
+  and the three X outputs step on each pulse; unpatched, X follows the t section's clock instead. The t
+  section has an external clock input too. Not yet checked on the Dice itself. Bloom (QU-Bit) can also be
+  clocked externally: Rate knob fully left, Clock input, trigger threshold +0.4 V.
 - Do not run the agent against the rack unprompted. Use `--dry-run` (prints, sends nothing) or `--mock`.
 
 ## The user's rig (verify before building on any of this)
@@ -24,7 +29,8 @@ option; this file is only what a fresh session needs.
 - Gear manuals (PDFs, iCloud, may need downloading first): `~/Library/Mobile Documents/com~apple~CloudDocs/Gear Manuals`.
   Loose PDFs: COSMOS, HAPAX, Microcosm, Morphader, Marbles. Folders by maker: AJH Synth, ALM, FrapTools,
   Instruo, Intellijel, Joranalogue, MakeNoise, Moog, OXI, QU-Bit, XAOC, plus a Jupiter-X USB backup.
-  Read the right manual before stating a hardware fact (no Dice manual there yet, only Marbles).
+  Read the right manual before stating a hardware fact. QU-Bit/ holds the Bloom manual. PDFs: no
+  pdftotext here; extract text with a small Swift PDFKit script (the Read tool's PDF mode needs poppler).
 
 ## Working with this user
 - Retired Technology Director; music (Eurorack) is now a hobby. Plain language, honest answers over agreeable ones, push back.
