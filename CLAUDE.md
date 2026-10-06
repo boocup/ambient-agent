@@ -21,6 +21,10 @@ option; this file is only what a fresh session needs.
 - ES-8: 4 input and 8 output jacks (macOS also lists ADAT channels, 12 in / 16 out; the extras are not
   jacks). Input plan: 1 and 2 voice triggers, 3 and 4 walks. Outputs: 1 shift trigger, 3 and 4 rate CVs.
 - The Hapax can send a follower as CC 3 on channel 15 over USB (input "HAPAX"); it clips above ~5 V.
+- Gear manuals (PDFs, iCloud, may need downloading first): `~/Library/Mobile Documents/com~apple~CloudDocs/Gear Manuals`.
+  Loose PDFs: COSMOS, HAPAX, Microcosm, Morphader, Marbles. Folders by maker: AJH Synth, ALM, FrapTools,
+  Instruo, Intellijel, Joranalogue, MakeNoise, Moog, OXI, QU-Bit, XAOC, plus a Jupiter-X USB backup.
+  Read the right manual before stating a hardware fact (no Dice manual there yet, only Marbles).
 
 ## Working with this user
 - Retired hobbyist; call me Nicole. Plain language, honest answers over agreeable ones, push back.
