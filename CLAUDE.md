@@ -56,3 +56,4 @@ option; this file is only what a fresh session needs.
 - `feedback.py` MIDI CC feedback and peak detection. `es8.py` ES-8 reading, triggers, slow voltages.
 - `triggers.py` matches notes sent with triggers that fired. `calibrate_rate.py` measures envelope rate.
 - `monitor_volts.py` read-only: prints the 4 ES-8 input voltages every second and flags any input outside a range.
+- `envelope_log.py` read-only: logs each envelope (ES-8 inputs 3, 4) with its rise and fall times and estimated rate voltage.
