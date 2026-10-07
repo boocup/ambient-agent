@@ -22,6 +22,7 @@ import sounddevice as sd
 
 from es8 import FULL_SCALE_VOLTS, find_es8
 
+NAMES = ["in1", "in2", "out1", "out2"]  # ES-8 jacks 1-4: the raw walks, then the clamped MetaModule outputs
 JACKS = 4  # the ES-8 has 4 input jacks; macOS lists more (ADAT) channels that carry nothing without an expander
 
 
@@ -83,14 +84,17 @@ def main():
                     hi[:] = -np.inf
                 np.minimum(all_lo, line_lo, out=all_lo)
                 np.maximum(all_hi, line_hi, out=all_hi)
-                cells, flags = [], []
+                cells, flags, silent = [], [], []
                 for i in range(n_in):
-                    cells.append(f"in{i + 1} {mean[i]:+6.2f} ({line_lo[i]:+5.2f}..{line_hi[i]:+5.2f})")
-                    if (i + 1) in out_of_range and (line_lo[i] < args.low - args.margin
-                                                     or line_hi[i] > args.high + args.margin):
-                        out_of_range[i + 1] += 1
-                        flags.append(f"in{i + 1}")
+                    cells.append(f"{NAMES[i]} {mean[i]:+6.2f} ({line_lo[i]:+5.2f}..{line_hi[i]:+5.2f})")
+                    if (i + 1) in out_of_range:
+                        if abs(mean[i]) < 0.03 and line_hi[i] - line_lo[i] < 0.03:
+                            silent.append(NAMES[i])  # flat 0 V: almost certainly nothing patched
+                        elif line_lo[i] < args.low - args.margin or line_hi[i] > args.high + args.margin:
+                            out_of_range[i + 1] += 1
+                            flags.append(NAMES[i])
                 note = f"  OUT OF RANGE: {', '.join(flags)}" if flags else ""
+                note += f"  no signal on {', '.join(silent)} (patched?)" if silent else ""
                 print(f"{time.monotonic() - started:7.1f}s  " + "   ".join(cells) + note, flush=True)
     except KeyboardInterrupt:
         pass
@@ -98,9 +102,9 @@ def main():
     print("\nWhole run, lowest..highest volts per input:")
     for i in range(n_in):
         if np.isfinite(all_lo[i]):
-            print(f"  in{i + 1}: {all_lo[i]:+.2f} .. {all_hi[i]:+.2f}")
+            print(f"  {NAMES[i]}: {all_lo[i]:+.2f} .. {all_hi[i]:+.2f}")
     for c, n in out_of_range.items():
-        print(f"  in{c}: {'stayed in range' if not n else f'left the range in {n} interval(s)'}")
+        print(f"  {NAMES[c - 1]}: {'stayed in range' if not n else f'left the range in {n} interval(s)'}")
 
 
 if __name__ == "__main__":
