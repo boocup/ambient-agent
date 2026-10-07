@@ -18,6 +18,14 @@ option; this file is only what a fresh session needs.
 - Envelope rates: two Walk 4 voltages go through a 4ms SISM (SCALE 0.70, SHIFT -2.4 V, both channels) and then
   Min-Max clamps (floor -4.0 V, ceiling -0.5 V from Source) to each Contour 1 Rise CV. Run `monitor_volts.py` to
   watch it: in 12 minutes nothing left the range. SHIFT reads about 0.2 V light on the real unit.
+- Status 2026-10-07: the rack patch above sounds good to the user, and the clamp kept both rate voltages in range over
+  a 52-minute run on the 4ms hardware, with two oddities (below). The agent code was not touched.
+- Open items: (1) brief spikes of the rate voltages to about +0.02 V (limit -0.5 V) and out1 sitting near -4.18 V
+  (limit -4.0 V); the user did not touch knobs, cause unknown, a 200-readings-a-second logger could show them.
+  (2) Envelopes felt a little long (rates sit near -2.4 to -2.8 V, 5x to 7x the slider time); options are the Contour
+  sliders, SHIFT up 1 V (halves lengths), or the floor knob to -3.0 V (Source value 35). Each volt doubles the time.
+  (3) The ES-8's 4 inputs are full (walks, rates); an ES-6 MK3 adds 6 inputs, about $160-199, DC coupling must be on.
+  (4) New iMac (rumored M6, October) and a Mac mini model host are on hold; the user decided to do nothing for now.
 - Do not run the agent against the rack unprompted. Use `--dry-run` (prints, sends nothing) or `--mock`.
 
 ## The user's rig (verify before building on any of this)
@@ -26,6 +34,8 @@ option; this file is only what a fresh session needs.
 - Envelopes: Joranalogue Contour 1 (rate CV: negative volts = longer envelopes), triggers from a
   Doepfer A-162 with an A-166 + Compare 2 lockout; an A-151 steps the Scales' fifth shift (full 10 V
   trigger double-steps it, about 5 V is right). Two Walk 4 random walks. Squarp Hapax, Mordax scope.
+- Contour 1 time settings are its sliders, sitting in the top half of the area labelled slew/loop (set by
+  hand, not measured). The rate CVs from the 4ms patch multiply those slider times.
 - ES-8: 4 input and 8 output jacks (macOS also lists ADAT channels, 12 in / 16 out; the extras are not
   jacks). Input plan: 1 and 2 voice triggers, 3 and 4 walks. Outputs: 1 shift trigger, 3 and 4 rate CVs.
 - The Hapax can send a follower as CC 3 on channel 15 over USB (input "HAPAX"); it clips above ~5 V.
