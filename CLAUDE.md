@@ -55,3 +55,4 @@ option; this file is only what a fresh session needs.
 - `music.py` scales, note cleanup. `form.py` sections, rhythm, memory, novelty. `player.py` MIDI out.
 - `feedback.py` MIDI CC feedback and peak detection. `es8.py` ES-8 reading, triggers, slow voltages.
 - `triggers.py` matches notes sent with triggers that fired. `calibrate_rate.py` measures envelope rate.
+- `monitor_volts.py` read-only: prints the 4 ES-8 input voltages every second and flags any input outside a range.
