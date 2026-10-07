@@ -37,6 +37,9 @@ def main():
     parser.add_argument("--low", type=float, default=-4.0, help="lowest allowed volts (default -4.0)")
     parser.add_argument("--high", type=float, default=-0.5, help="highest allowed volts (default -0.5)")
     parser.add_argument("--margin", type=float, default=0.15, help="volts of slack before flagging (default 0.15)")
+    parser.add_argument("--only-flagged", action="store_true",
+                        help="print only the intervals that leave the range (plus a short 'still watching' line "
+                             "every 5 minutes)")
     args = parser.parse_args()
 
     checked = [c for c in parse_inputs(args.clamped) if c != 0]
@@ -72,6 +75,7 @@ def main():
     print(f"Reading {info['name']} inputs 1-{n_in} (read only). Checking inputs {checked or 'none'} against "
           f"{args.low:+.2f} to {args.high:+.2f} V (+-{args.margin:.2f}). Ctrl-C to stop.\n")
     started = time.monotonic()
+    last_beat = 0.0
     try:
         # Input-only stream: opens no outputs, so it cannot change anything on the rack.
         with sd.InputStream(device=index, samplerate=rate, channels=n_in, dtype="float32", callback=callback):
@@ -103,7 +107,14 @@ def main():
                             flags.append(NAMES[i])
                 note = f"  OUT OF RANGE: {', '.join(flags)}" if flags else ""
                 note += f"  no signal on {', '.join(silent)} (patched?)" if silent else ""
-                print(f"{time.monotonic() - started:7.1f}s  " + "   ".join(cells) + note, flush=True)
+                now = time.monotonic() - started
+                if args.only_flagged and not flags:
+                    if now - last_beat >= 300:
+                        last_beat = now
+                        print(f"{now:7.1f}s  still watching, {sum(out_of_range.values())} out-of-range interval(s) "
+                              f"so far", flush=True)
+                    continue
+                print(f"{now:7.1f}s  " + "   ".join(cells) + note, flush=True)
     except KeyboardInterrupt:
         pass
 
