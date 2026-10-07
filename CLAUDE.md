@@ -10,11 +10,14 @@ option; this file is only what a fresh session needs.
   local or hosted AI (a Marbles clone, "Dice", plus the rack). Hold off on changing or slimming down
   the agent until they ask. Everything built is committed; delete nothing.
 - Dice is a clone of Mutable Instruments Marbles; use `marbles_user_manual.pdf` (see manuals below).
-- Open question: does Dice have an external clock input, so its pitch advances only on accepted notes?
-  Per the Marbles manual: yes. The X section (the three pitch voltages) has its own external clock input,
-  and the three X outputs step on each pulse; unpatched, X follows the t section's clock instead. The t
-  section has an external clock input too. Not yet checked on the Dice itself. Bloom (QU-Bit) can also be
-  clocked externally: Rate knob fully left, Clock input, trigger threshold +0.4 V.
+- Dice clocking (answered 2026-10-07, works by ear): voice 1 is on Dice, voice 2 on Bloom, each with its own
+  Contour 1 envelope and its own A-166 + Compare 2 trigger halter. Dice gets the multed A-166 output (the accepted
+  trigger, not Bloom's raw clock) in BOTH clock jacks: the lower right one is the X (pitch) clock, which steps X1-X3
+  on every pulse; with only the left t clock patched, X1/X3 follow t1/t3 and may rarely step. Bloom can also be
+  clocked externally (Rate knob fully left, Clock input, threshold +0.4 V; its Clock Output follows its clock rate).
+- Envelope rates: two Walk 4 voltages go through a 4ms SISM (SCALE 0.70, SHIFT -2.4 V, both channels) and then
+  Min-Max clamps (floor -4.0 V, ceiling -0.5 V from Source) to each Contour 1 Rise CV. Run `monitor_volts.py` to
+  watch it: in 12 minutes nothing left the range. SHIFT reads about 0.2 V light on the real unit.
 - Do not run the agent against the rack unprompted. Use `--dry-run` (prints, sends nothing) or `--mock`.
 
 ## The user's rig (verify before building on any of this)
