@@ -56,6 +56,9 @@ def main():
     all_lo = np.full(n_in, np.inf)
     all_hi = np.full(n_in, -np.inf)
     out_of_range = {c: 0 for c in checked}
+    at_ceiling = {c: 0 for c in checked}  # intervals spent pinned at the high limit
+    at_floor = {c: 0 for c in checked}    # ... and at the low limit
+    intervals = 0
 
     def callback(indata, frames, time_info, status):
         nonlocal total, count, lo, hi
@@ -84,10 +87,15 @@ def main():
                     hi[:] = -np.inf
                 np.minimum(all_lo, line_lo, out=all_lo)
                 np.maximum(all_hi, line_hi, out=all_hi)
+                intervals += 1
                 cells, flags, silent = [], [], []
                 for i in range(n_in):
                     cells.append(f"{NAMES[i]} {mean[i]:+6.2f} ({line_lo[i]:+5.2f}..{line_hi[i]:+5.2f})")
                     if (i + 1) in out_of_range:
+                        if mean[i] >= args.high - 0.03:
+                            at_ceiling[i + 1] += 1
+                        elif mean[i] <= args.low + 0.03:
+                            at_floor[i + 1] += 1
                         if abs(mean[i]) < 0.03 and line_hi[i] - line_lo[i] < 0.03:
                             silent.append(NAMES[i])  # flat 0 V: almost certainly nothing patched
                         elif line_lo[i] < args.low - args.margin or line_hi[i] > args.high + args.margin:
@@ -105,6 +113,11 @@ def main():
             print(f"  {NAMES[i]}: {all_lo[i]:+.2f} .. {all_hi[i]:+.2f}")
     for c, n in out_of_range.items():
         print(f"  {NAMES[c - 1]}: {'stayed in range' if not n else f'left the range in {n} interval(s)'}")
+    if intervals:
+        print(f"\nTime pinned at a limit, out of {intervals} intervals of {args.every:g}s:")
+        for c in out_of_range:
+            print(f"  {NAMES[c - 1]}: {100 * at_ceiling[c] / intervals:.0f}% at the ceiling ({args.high:+.2f} V), "
+                  f"{100 * at_floor[c] / intervals:.0f}% at the floor ({args.low:+.2f} V)")
 
 
 if __name__ == "__main__":
