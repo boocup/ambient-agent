@@ -26,6 +26,9 @@ option; this file is only what a fresh session needs.
   sliders, SHIFT up 1 V (halves lengths), or the floor knob to -3.0 V (Source value 35). Each volt doubles the time.
   (3) The ES-8's 4 inputs are full (walks, rates); an ES-6 MK3 adds 6 inputs, about $160-199, DC coupling must be on.
   (4) New iMac (rumored M6, October) and a Mac mini model host are on hold; the user decided to do nothing for now.
+- Idea to discuss next (user, 2026-10-08): add the Joranalogue Morph 4 so longer envelopes are a bit louder and shorter ones
+  a bit quieter, driven by the clamped rate voltage (more negative = longer). Feasible in principle: Morph 4 is four
+  VCAs under one master morph CV; the SISM could invert/scale the rate voltage into that CV. Manual: Gear Manuals/Joranalogue.
 - Do not run the agent against the rack unprompted. Use `--dry-run` (prints, sends nothing) or `--mock`.
 
 ## The user's rig (verify before building on any of this)
