@@ -70,3 +70,4 @@ option; this file is only what a fresh session needs.
 - `triggers.py` matches notes sent with triggers that fired. `calibrate_rate.py` measures envelope rate.
 - `monitor_volts.py` read-only: prints the 4 ES-8 input voltages every second and flags any input outside a range.
 - `envelope_log.py` read-only: logs each envelope (ES-8 inputs 1, 2) with rise/fall times and its rate voltage (inputs 3, 4).
+- `level_changes.py` read-only: logs each change of a slow two-level voltage on an ES-8 input (e.g. the A-150 fifth shift) and how long each level lasted.
