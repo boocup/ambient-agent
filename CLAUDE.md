@@ -33,6 +33,14 @@ option; this file is only what a fresh session needs.
   sources with the Claude API backend, used for NOTES ONLY (existing path: composer.py -> player.py -> MIDI -> Intellijel 1U);
   the rack keeps envelopes, rates and the fifth shift. Spend $20-50 first (set an account spend limit), then decide on a
   Mac mini model host. Not started; the agent stays untouched until the user asks.
+- Fifth-shift tuning (2026-10-08): Walk 4 accumulator -> Compare 2 -> A-150-1 gives the 0.58 V fifth; Compare high = fifth ON.
+  Goal: home (0 V) dominant, roughly 50/50 with 1-2 minute stays. Results, 15 min each: size 9 o'clock = 1% on; 10:30 = 11% on
+  (home stays ~65 s, fifth only 4 s blips); 11 = 26% on but flips every ~14 s. With a Befaco slew limiter (MetaModule In 5/Out 5,
+  rise and fall at middle) in front of Compare 2 at size 11, the fifth stayed ON 15+ minutes with no flips. NEXT: size back to
+  about 10 o'clock with the slew in, test 15 min. Measure with `level_changes.py` (ES-8 input 1 = A-150 output).
+  `walk4+slews cheat sheet.pdf` in Gear Manuals still says size 9; update it once the size settles.
+- Ordered: ES-6 MK3 input expander + 15 cm optical cable. Before installing read its manual page: remove the DC-blocking
+  jumpers on header GT4 (factory default blocks DC), 10-way ribbon to a header on the ES-8 PCB, 10-pin power.
 - Do not run the agent against the rack unprompted. Use `--dry-run` (prints, sends nothing) or `--mock`.
 
 ## The user's rig (verify before building on any of this)
