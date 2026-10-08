@@ -29,6 +29,10 @@ option; this file is only what a fresh session needs.
 - Idea to discuss next (user, 2026-10-08): add the Joranalogue Morph 4 so longer envelopes are a bit louder and shorter ones
   a bit quieter, driven by the clamped rate voltage (more negative = longer). Feasible in principle: Morph 4 is four
   VCAs under one master morph CV; the SISM could invert/scale the rate voltage into that CV. Manual: Gear Manuals/Joranalogue.
+- Eventual to-do (user, 2026-10-08): test a hosted-LLM version: replace Dice (voice 1) and Bloom (voice 2) as the note
+  sources with the Claude API backend, used for NOTES ONLY (existing path: composer.py -> player.py -> MIDI -> Intellijel 1U);
+  the rack keeps envelopes, rates and the fifth shift. Spend $20-50 first (set an account spend limit), then decide on a
+  Mac mini model host. Not started; the agent stays untouched until the user asks.
 - Do not run the agent against the rack unprompted. Use `--dry-run` (prints, sends nothing) or `--mock`.
 
 ## The user's rig (verify before building on any of this)
