@@ -33,6 +33,15 @@ option; this file is only what a fresh session needs.
   sources with the Claude API backend, used for NOTES ONLY (existing path: composer.py -> player.py -> MIDI -> Intellijel 1U);
   the rack keeps envelopes, rates and the fifth shift. Spend $20-50 first (set an account spend limit), then decide on a
   Mac mini model host. Not started; the agent stays untouched until the user asks.
+- API billing (2026-10-09): Console credits are prepaid ($4.32 left), auto-reload OFF (keep it off), monthly spend limit
+  set to $100 (was the $200,000 default); add an email notification at about $20 if not done. Claude Code logs in with the
+  Pro account (/status), so coding sessions do not use the credits. The only API spend so far, about $0.68, was the agent on
+  Oct 3-5 (Sonnet 5.5, 174K tokens in, 33K out per the Console Usage page).
+- Rack check (2026-10-09, 10 min each, Compare 2 size 11:00, shift 12:30): clamped rates stayed in range (0.2-0.4% of
+  seconds out, peaks near 0 V). Envelopes via `envelope_log.py` (Contour outs on ES-8 in 1, 2): voice 1 94 envelopes, rise
+  median 2.8 s (1.2-14); voice 2 68 envelopes, rise median 3.5 s (2.4-12); falls about 0.9 s; rise follows the rate
+  voltage (corr -0.72, -0.90); rates sit around -1.4 to -1.6 V. The Walk 4 wanders, so any window is only a sample.
+  ES-8 in 1, 2 read flat (+0.54, +4.76) before the Contours were patched there. Fifth-shift test not run.
 - Fifth-shift tuning (2026-10-08): Walk 4 accumulator -> Compare 2 -> A-150-1 gives the 0.58 V fifth; Compare high = fifth ON.
   Goal: home (0 V) dominant, roughly 50/50 with 1-2 minute stays. Results, 15 min each: size 9 o'clock = 1% on; 10:30 = 11% on
   (home stays ~65 s, fifth only 4 s blips); 11 = 26% on but flips every ~14 s. With a Befaco slew limiter (MetaModule In 5/Out 5,
