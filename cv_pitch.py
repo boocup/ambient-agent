@@ -27,8 +27,29 @@ POLL_SECONDS = 0.05
 
 NOTE_FOR_RACK = ("the rack, not you, decides when each note sounds, so only the ORDER of pitches matters. Rhythm, "
                  "note lengths and rests are ignored: write each voice as a patient melodic line that is good heard "
-                 "one note at a time, a few seconds apart. Prefer small steps, an occasional leap of a fourth or "
-                 "fifth, and a clear shape across the phrase. Give the two voices different registers.")
+                 "one note at a time, a few seconds apart. Use the whole allowed range, three octaves, not one: mix "
+                 "small steps with leaps of a fourth, a fifth or an octave, and a clear shape across the phrase. "
+                 "Never return to a pitch within the voice's last 4 notes, and avoid the same note name (in any "
+                 "octave) twice in a row. Each voice should have its own register, but let them cross sometimes.")
+REPEAT_PITCHES = 4  # a voice may not replay one of its last N pitches ...
+REPEAT_NAMES = 2    # ... or the same note name (any octave) as one of its last N notes
+
+
+def avoid_recent(pitches: list[int], scale: list[int], history: list[int]) -> list[int]:
+    """Replace any pitch the voice played too recently with the nearest scale note it didn't. Octave moves count,
+    so a repeat can come back in another octave. `history` is what the voice already has queued or has played."""
+    hist = list(history)
+    out = []
+    for p in pitches:
+        recent = hist[-REPEAT_PITCHES:]
+        names = {q % 12 for q in hist[-REPEAT_NAMES:]}
+        if p in recent or p % 12 in names:
+            options = [q for q in scale if q not in recent and q % 12 not in names]
+            if options:
+                p = min(options, key=lambda q: (abs(q - p), q))
+        out.append(p)
+        hist.append(p)
+    return out
 
 
 def parse_ints(text: str) -> list[int]:
@@ -44,6 +65,7 @@ class CVVoice:
         self.out_jack = out_jack
         self.zero_pitch = zero_pitch
         self.queue: deque[int] = deque()
+        self.recent: list[int] = []   # the last pitches queued for this voice, oldest first (for avoid_recent)
         self.pitch: int | None = None
         self.steps = 0
 
@@ -128,7 +150,9 @@ def run_cv_pitch(args, compose_with_fallback) -> int:
                 state["phrases"] += 1
                 for v in voices:
                     notes = sorted(phrase.parts.get(v.name, []), key=lambda n: n.start)
-                    v.queue.extend(n.pitch for n in notes)
+                    pitches = avoid_recent([n.pitch for n in notes], scale, v.recent)
+                    v.queue.extend(pitches)
+                    v.recent = (v.recent + pitches)[-REPEAT_PITCHES:]
                 counts = ", ".join(f"{v.name} {len(v.queue)}" for v in voices)
             print(f"  [melody {state['phrases']}] {phrase.intent} ({time.monotonic() - started:.1f} s; "
                   f"notes queued: {counts})")

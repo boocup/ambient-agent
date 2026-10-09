@@ -260,6 +260,10 @@ python ambient_agent.py --cv-pitch --cv-notes 6                # a short real ru
   never changes under a sounding note. Note timing and lengths from the composer are
   ignored; only the order of pitches is used. The next melody is composed in the
   background while the queue runs down; if it is late, a voice just holds its pitch.
+- **No quick repeats.** The prompt asks for the whole three octaves and no return to a recent
+  pitch, and the code enforces it: a voice never replays one of its last 4 pitches or the same
+  note name as one of its last 2 notes (a repeat is moved to the nearest scale note that
+  isn't recent, possibly in another octave).
 - Outputs return to 0 V on exit. `--dry-run` still reads the envelopes but sends nothing.
 
 ## Keeping long sessions from repeating (form)
