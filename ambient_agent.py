@@ -111,6 +111,21 @@ def parse_args(argv=None):
                         "voltages and the shift trigger. Needs --es8; add --feedback for the Hapax follower peaks")
     p.add_argument("--conduct-window", type=float, default=20.0, metavar="SECONDS",
                    help="with --conduct: how often to log a summary line")
+    p.add_argument("--cv-pitch", action="store_true",
+                   help="CV pitch mode: no MIDI. Play the composed melody as 1 V/oct voltages from ES-8 outputs "
+                        "(--cv-out), one note per Contour envelope read on the inputs (--cv-env); a voice steps to "
+                        "its next note only after its envelope has fallen. See cv_pitch.py")
+    p.add_argument("--cv-out", default="1,2", metavar="N[,N...]",
+                   help="with --cv-pitch: ES-8 outputs carrying each voice's pitch CV (default 1,2)")
+    p.add_argument("--cv-env", default="1,2", metavar="N[,N...]",
+                   help="with --cv-pitch: ES-8 inputs carrying each voice's envelope, in the same order (default 1,2)")
+    p.add_argument("--cv-key", default="Bb minor-pentatonic", metavar="'ROOT MODE'",
+                   help="with --cv-pitch: the scale (default 'Bb minor-pentatonic')")
+    p.add_argument("--cv-zero", default="Bb3", metavar="NOTE",
+                   help="with --cv-pitch: the note that 0 V stands for; must be the root of --cv-key. Tune the "
+                        "oscillators so 0 V sounds it. Notes span one octave below to one above the octave above it")
+    p.add_argument("--cv-notes", type=int, default=0, metavar="N",
+                   help="with --cv-pitch: stop after each voice has played N notes (0 = until Ctrl+C)")
     p.add_argument("--rate", action="append", metavar="OUT:WALK:V0:V1",
                    help="with --conduct: drive ES-8 output OUT (a rate CV) from the walk on input WALK: V0 volts when "
                         "the walk is at the bottom of its recent range, V1 at the top, e.g. 3:3:-0.5:-4 "
@@ -387,6 +402,10 @@ def main(argv=None) -> int:
 
     if args.conduct:
         return run_conduct(args)
+
+    if args.cv_pitch:
+        from cv_pitch import run_cv_pitch
+        return run_cv_pitch(args, compose_with_fallback)
 
     # Spell notes the way the key was written: 'Bb ...' -> flats, 'A# ...' -> sharps.
     use_flats(args.key.strip()[1:2] == "b")

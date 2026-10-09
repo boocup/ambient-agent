@@ -237,6 +237,31 @@ python ambient_agent.py --conduct --es8 --feedback HAPAX:15:3
 [conduct] voice1: 7 triggers, typical gap 4.1 s; walk3 at 0.62 -> output 3 -2.7 V; walk4 learning (holding mid) -> output 4 -2.25 V; peaks 1
 ```
 
+## CV pitch mode (the ES-8 sends the notes; the rack's envelopes set the pace)
+
+`--cv-pitch` uses no MIDI. The composer writes a melody for each voice and the ES-8
+sends it as 1 V/oct pitch voltages; the rack decides when a note sounds (its triggers
+fire the Contours) and the agent decides which note:
+
+```bash
+python ambient_agent.py --cv-pitch --dry-run                   # reads the envelopes, sends no voltage
+python ambient_agent.py --cv-pitch --cv-notes 6                # a short real run, then stop
+```
+
+- **Patch.** ES-8 outputs `--cv-out` (default 1,2) go to the oscillators' 1 V/oct
+  inputs; each voice's Contour envelope comes back on the input in `--cv-env`
+  (default 1,2).
+- **Pitch.** `--cv-key` (default `Bb minor-pentatonic`) is quantized in software.
+  `--cv-zero` (default `Bb3`, must be the scale's root) is what 0 V stands for, so tune
+  the oscillators to sound that note at 0 V. Notes span one octave below to one above
+  the home octave, -1 V to about +1.9 V.
+- **One note per envelope.** A voice holds its pitch while its envelope runs and
+  steps to the next melody note only once the envelope has fully fallen, so a pitch
+  never changes under a sounding note. Note timing and lengths from the composer are
+  ignored; only the order of pitches is used. The next melody is composed in the
+  background while the queue runs down; if it is late, a voice just holds its pitch.
+- Outputs return to 0 V on exit. `--dry-run` still reads the envelopes but sends nothing.
+
 ## Keeping long sessions from repeating (form)
 
 Asking the model to "develop the previous phrase" every time pulls each phrase

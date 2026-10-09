@@ -50,6 +50,12 @@ option; this file is only what a fresh session needs.
   `walk4+slews cheat sheet.pdf` in Gear Manuals still says size 9; update it once the size settles.
 - Ordered: ES-6 MK3 input expander + 15 cm optical cable. Before installing read its manual page: remove the DC-blocking
   jumpers on header GT4 (factory default blocks DC), 10-way ribbon to a header on the ES-8 PCB, 10-pin power.
+- CV pitch mode (2026-10-09, user asked for it; no MIDI): Dice, Bloom, 321 and Scales are out of the loop. ES-8 out 1/2 send
+  1 V/oct pitch straight to the two AJH oscillators, quantized in software to Bb minor pentatonic (0 V = the root, notes -1 V to
+  +1.9 V). Contour envelopes come back on ES-8 in 1/2 (the A-166/Compare 2 halters still fire them, a clock feeds the A-166); the
+  agent steps a voice to its next note only after that voice's envelope falls. Code: `cv_pitch.py`, flag `--cv-pitch`. Tested
+  with `--dry-run` (mock and real Sonnet 5.5), NOT yet sent as real voltage. ES-8 in 3/4 (rate taps) are free to reuse.
+  The ES-6 should add inputs 5+ later today.
 - Do not run the agent against the rack unprompted. Use `--dry-run` (prints, sends nothing) or `--mock`.
 
 ## The user's rig (verify before building on any of this)
