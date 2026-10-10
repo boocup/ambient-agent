@@ -29,10 +29,10 @@ option; this file is only what a fresh session needs.
 - Idea to discuss next (user, 2026-10-08): add the Joranalogue Morph 4 so longer envelopes are a bit louder and shorter ones
   a bit quieter, driven by the clamped rate voltage (more negative = longer). Feasible in principle: Morph 4 is four
   VCAs under one master morph CV; the SISM could invert/scale the rate voltage into that CV. Manual: Gear Manuals/Joranalogue.
-- Eventual to-do (user, 2026-10-08): test a hosted-LLM version: replace Dice (voice 1) and Bloom (voice 2) as the note
-  sources with the Claude API backend, used for NOTES ONLY (existing path: composer.py -> player.py -> MIDI -> Intellijel 1U);
-  the rack keeps envelopes, rates and the fifth shift. Spend $20-50 first (set an account spend limit), then decide on a
-  Mac mini model host. Not started; the agent stays untouched until the user asks.
+- Hosted-LLM notes test DONE (2026-10-09/10) and shelved: `cv_pitch.py` (`--cv-pitch`) plays the melody as 1 V/oct from ES-8 out
+  1/2, one note per Contour envelope; it works (dry-run and real) but the user heard it as worse than Dice/Bloom and went back to
+  Dice/Bloom. An LLM conductor (mood -> Dice CV knobs) was described and declined; the Mac mini / small local model are TABLED.
+  The user wants generative music from the rack; my role is guidance, measuring and notes, not the signal path. Code is kept.
 - API billing (2026-10-09): Console credits are prepaid ($4.32 left), auto-reload OFF (keep it off), monthly spend limit
   set to $100 (was the $200,000 default); add an email notification at about $20 if not done. Claude Code logs in with the
   Pro account (/status), so coding sessions do not use the credits. The only API spend so far, about $0.68, was the agent on
@@ -48,6 +48,16 @@ option; this file is only what a fresh session needs.
   rise and fall at middle) in front of Compare 2 at size 11, the fifth stayed ON 15+ minutes with no flips. NEXT: size back to
   about 10 o'clock with the slew in, test 15 min. Measure with `level_changes.py` (ES-8 input 1 = A-150 output).
   `walk4+slews cheat sheet.pdf` in Gear Manuals still says size 9; update it once the size settles.
+- Fifth-shift status (2026-10-10): the "always shifting" fault was the slew patched wrong (Compare 2 saw 0 V = window centre). With
+  it right, the slewed walk into Compare 2 sits about 1-4 V (median 2.4) and crosses its median every ~8 s. Compare 2 per manual:
+  shift knob -5..+5 V (about 1 V per hour on the dial), size = total window width 0..10 V (noon = 5 V), CVs ADD to the knobs.
+  Knobs fully CCW + MetaModule Sources (Out 7 shift CV +5.65 V = Source 78.25, Out 8 size CV +3.3 V = Source 66.5) put the upper
+  edge at about 2.25 V: fifth ON 34-52% per 10 min (varies with the walk), stays only 7-13 s. Longer stays: a hysteresis patch
+  (Compare OUT -> MetaModule -> Min-Max Max with a +1.7 V Source -> size CV) simulated to about 90 s stays but the cabling got
+  confusing and was removed; simulated alternative: more Befaco slew (extra smoothing 40-80 s gives median stays 41-75 s).
+  The user reset the patch and wants it SIMPLE; start over next time. Measure with ES-8 in 3 = A-150 out (`level_changes.py
+  --input 3`) and in 4 = walk into Compare 2 (a read-only recording). The cheat-sheet PDF is NOT updated yet (still says size 9).
+  The ES-8 once dropped off USB mid-test (check `find_es8` / the device list first).
 - Ordered: ES-6 MK3 input expander + 15 cm optical cable. Before installing read its manual page: remove the DC-blocking
   jumpers on header GT4 (factory default blocks DC), 10-way ribbon to a header on the ES-8 PCB, 10-pin power.
 - CV pitch mode (2026-10-09, user asked for it; no MIDI): Dice, Bloom, 321 and Scales are out of the loop. ES-8 out 1/2 send
