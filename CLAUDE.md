@@ -58,6 +58,16 @@ option; this file is only what a fresh session needs.
   The user reset the patch and wants it SIMPLE; start over next time. Measure with ES-8 in 3 = A-150 out (`level_changes.py
   --input 3`) and in 4 = walk into Compare 2 (a read-only recording). The cheat-sheet PDF is NOT updated yet (still says size 9).
   The ES-8 once dropped off USB mid-test (check `find_es8` / the device list first).
+- Fifth-shift PLAN for next session (user chose 2026-10-10, "flip each crossing"; keep it simple, do nothing until asked):
+  Walk 4 -> A-148 sample and hold (clocked slowly, about 45-60 s; optional) -> Contour 1 GATE input (manual: Schmitt, low below
+  2 V / high above 3 V, so 1 V hysteresis built in; output 0/+10 V slewed) -> A-162 (manual: starts on the RISING edge only, so the
+  Contour falling gives no trigger; set Len about 0.1 s) -> A-151 set to 2 steps (toggles on every trigger: I/O 1 empty = 0 V,
+  I/O 2 = 0.583 V from a Source/attenuator) -> Scales fifth shift. Result: the shift flips on each upward crossing, about 50/50,
+  stays roughly a minute (simulated on the recorded walk: 21 changes in 12 min with Schmitt alone). It does NOT follow the walk's
+  level. The walk needs to sit around 2.5 V (it does, median 2.4). Open: the two Contour 1s are the voice envelopes, so this needs
+  a THIRD Contour 1 (or another way to get the Schmitt). A-150 is no longer needed (A-150 = level-controlled 2-way switch, CV
+  threshold about 3.6 V); the user may pull it to free space for the A-148 / ES-6. Doepfer manuals are in Gear Manuals/doepfer
+  (I missed that folder once: look in lowercase folder names too).
 - Ordered: ES-6 MK3 input expander + 15 cm optical cable. Before installing read its manual page: remove the DC-blocking
   jumpers on header GT4 (factory default blocks DC), 10-way ribbon to a header on the ES-8 PCB, 10-pin power.
 - CV pitch mode (2026-10-09, user asked for it; no MIDI): Dice, Bloom, 321 and Scales are out of the loop. ES-8 out 1/2 send
@@ -80,7 +90,7 @@ option; this file is only what a fresh session needs.
   jacks). Input plan: 1 and 2 voice triggers, 3 and 4 walks. Outputs: 1 shift trigger, 3 and 4 rate CVs.
 - The Hapax can send a follower as CC 3 on channel 15 over USB (input "HAPAX"); it clips above ~5 V.
 - Gear manuals (PDFs, iCloud, may need downloading first): `~/Library/Mobile Documents/com~apple~CloudDocs/Gear Manuals`.
-  Loose PDFs: COSMOS, HAPAX, Microcosm, Morphader, Marbles. Folders by maker: AJH Synth, ALM, FrapTools,
+  Loose PDFs: COSMOS, HAPAX, Microcosm, Morphader, Marbles. Folders by maker: AJH Synth, ALM, doepfer (A-148, A-150, A-151, A-162, A-166 manuals), FrapTools,
   Instruo, Intellijel, Joranalogue, MakeNoise, Moog, OXI, QU-Bit, XAOC, plus a Jupiter-X USB backup.
   Read the right manual before stating a hardware fact. QU-Bit/ holds the Bloom manual. PDFs: no
   pdftotext here; extract text with a small Swift PDFKit script (the Read tool's PDF mode needs poppler).
