@@ -68,6 +68,19 @@ option; this file is only what a fresh session needs.
   a THIRD Contour 1 (or another way to get the Schmitt). A-150 is no longer needed (A-150 = level-controlled 2-way switch, CV
   threshold about 3.6 V); the user may pull it to free space for the A-148 / ES-6. Doepfer manuals are in Gear Manuals/doepfer
   (I missed that folder once: look in lowercase folder names too).
+- ES-6 mk3 installed and working (2026-10-11). Mapping: ES-8 jacks 1-4 = inputs 1-4; ES-6 jacks 1-6 = inputs 5-10 (use `--es8-expanded`);
+  inputs 11-12 have no jacks (ignore). Setup: 10-way ribbon (red stripe down) ES-6 to the ES-8 PCB header, optical cable from the ES-6's
+  single digital OUTPUT to the ES-8 ADAT IN (Expert Sleepers' ES-6 page: "Digital output: optical, ADAT Lightpipe"; their forum: you have
+  to use the ADAT connectors), and all three GT4 jumpers REMOVED (jumpers fitted = DC blocking, so steady CV decays to 0; verified: with
+  them off, 3 V reads 3.01 V and 4 V reads 3.96 V, steady). After any rack power cycle the ES-8 can vanish from the Mac: replug its USB
+  cable (it dropped off 3 times on 2026-10-11); a stream may fail to open right after (retry). The ES-6 jacks read accurately; the ES-8's own
+  jacks read about 5% low (4 V reads 3.82 V; a Contour's +10 V peak read 9.4 V before the ES-6 existed). Forum summaries say ES-8 inputs are
+  uncalibrated (scale and offset in software if exact volts matter); not corrected in my scripts. `monitor_volts.py` and the other logging
+  scripts are limited to 4 inputs: NOT yet updated for the ES-6 inputs (offer to do it). UNPATCHED ES-6 jacks float and read junk once the
+  jumpers are off (some swing about +-10 V, some sit near +1.4 V); harmless because scripts read only named jacks. PENDING question for the
+  Expert Sleepers forum (waiting on a forum admin; user does not want to commit to terminating unused jacks): "ES-6 mk3 with GT4 jumpers
+  removed: patched jacks read correctly, but unpatched jacks read junk (some swing about +-10 V, some sit near +1.4 V); with jumpers
+  fitted they read 0. Is that expected, or a sign of a bad jack contact?" Expert Sleepers' docs live in Gear Manuals/expertsleepers (HTML).
 - Ordered: ES-6 MK3 input expander + 15 cm optical cable. Before installing read its manual page: remove the DC-blocking
   jumpers on header GT4 (factory default blocks DC), 10-way ribbon to a header on the ES-8 PCB, 10-pin power.
 - CV pitch mode (2026-10-09, user asked for it; no MIDI): Dice, Bloom, 321 and Scales are out of the loop. ES-8 out 1/2 send
