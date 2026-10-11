@@ -68,6 +68,14 @@ option; this file is only what a fresh session needs.
   a THIRD Contour 1 (or another way to get the Schmitt). A-150 is no longer needed (A-150 = level-controlled 2-way switch, CV
   threshold about 3.6 V); the user may pull it to free space for the A-148 / ES-6. Doepfer manuals are in Gear Manuals/doepfer
   (I missed that folder once: look in lowercase folder names too).
+- Fifth-shift IDEA to pick up next (2026-10-11, user: "brilliant"): use the Joranalogue SELECT 2 (the user owns one; manual in Gear
+  Manuals/Joranalogue). Per its manual: a gate on the select input switches the left signal input (normalled to a precise +5 V) to the
+  right one (normalled to 0 V); gate inputs have Schmitt action (low below 2 V, high above 3 V, so about 1 V of hysteresis); a polariser
+  knob at the output goes -1 / 0 (centre) / +1 (set it to about +0.117 so +5 V becomes about 0.583 V, the fifth); a HOLD input freezes the
+  output (stores for minutes, so a slow gate on hold could make the shift change only about once a minute). Proposed chain: slewed walk
+  into the select gate -> output A -> Scales shift, signal inputs left unpatched. It FOLLOWS the walk level with hysteresis; it does not flip
+  on each crossing (the A-162 -> A-151 toggle chain is still the alternative). Needs no A-150, Compare 2, third Contour or attenuator.
+  Not tried yet. Cautions from the manual: if the A output is unpatched it mixes into B. Gear list: see memory file gear-list.
 - ES-6 mk3 installed and working (2026-10-11). Mapping: ES-8 jacks 1-4 = inputs 1-4; ES-6 jacks 1-6 = inputs 5-10 (use `--es8-expanded`);
   inputs 11-12 have no jacks (ignore). Setup: 10-way ribbon (red stripe down) ES-6 to the ES-8 PCB header, optical cable from the ES-6's
   single digital OUTPUT to the ES-8 ADAT IN (Expert Sleepers' ES-6 page: "Digital output: optical, ADAT Lightpipe"; their forum: you have
