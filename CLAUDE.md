@@ -78,8 +78,8 @@ option; this file is only what a fresh session needs.
   uncalibrated (scale and offset in software if exact volts matter); not corrected in my scripts. `monitor_volts.py` and the other logging
   scripts are limited to 4 inputs: NOT yet updated for the ES-6 inputs (offer to do it). UNPATCHED ES-6 jacks float and read junk once the
   jumpers are off (some swing about +-10 V, some sit near +1.4 V); harmless because scripts read only named jacks. PENDING question for the
-  Expert Sleepers forum (waiting on a forum admin; user does not want to commit to terminating unused jacks): "ES-6 mk3 with GT4 jumpers
-  removed: patched jacks read correctly, but unpatched jacks read junk (some swing about +-10 V, some sit near +1.4 V); with jumpers
+  Expert Sleepers forum (waiting on a forum admin; user does not want to commit to terminating unused jacks): "ES-6 mk3 reading slow CVs
+  (walks, envelopes): with the factory GT4 jumpers fitted steady voltages decayed to 0, so I removed them; patched jacks read correctly, but unpatched jacks read junk (some swing about +-10 V, some sit near +1.4 V); with jumpers
   fitted they read 0. Is that expected, or a sign of a bad jack contact?" Expert Sleepers' docs live in Gear Manuals/expertsleepers (HTML).
 - Ordered: ES-6 MK3 input expander + 15 cm optical cable. Before installing read its manual page: remove the DC-blocking
   jumpers on header GT4 (factory default blocks DC), 10-way ribbon to a header on the ES-8 PCB, 10-pin power.
