@@ -6,6 +6,12 @@ It can also read the rack through an Expert Sleepers ES-8 and steer it back. See
 option; this file is only what a fresh session needs.
 
 ## Where things stand
+- START HERE (updated 2026-10-12): the rack runs Dice/Bloom for notes (the LLM-notes test lost by ear, see below). Open threads, in the order the user cares:
+  (1) the Select 2 fifth-shift test ("SIMPLE TEST PATCH" in the fifth-shift notes below), the user will say when; (2) after the user attaches Ethernet, run
+  `python bench_api.py` then `python bench_api.py --compare` (Wi-Fi baseline already saved; see `bench_api.py` and `bench_chat.py` in Files); (3) offer to
+  update the monitor/logging scripts for the ES-6 inputs (inputs 5-10); (4) the walk4+slews cheat-sheet PDF still says size 9 and needs the final fifth-shift
+  settings; (5) ask whether anyone answered os's thread on ModWiggler (resolved on our side). Keep replies short and do one change at a time: the user dislikes long
+  answers and uncertainty, and checks claims (verify hardware facts in the manuals under Gear Manuals, including lowercase folder names like `doepfer`).
 - Direction (2026-10-06): the user pulled the AI patch from the rack and wants to start fresh WITHOUT
   local or hosted AI (a Marbles clone, "Dice", plus the rack). Hold off on changing or slimming down
   the agent until they ask. Everything built is committed; delete nothing.
@@ -24,7 +30,7 @@ option; this file is only what a fresh session needs.
   (limit -4.0 V); the user did not touch knobs, cause unknown, a 200-readings-a-second logger could show them.
   (2) Envelopes felt a little long (rates sit near -2.4 to -2.8 V, 5x to 7x the slider time); options are the Contour
   sliders, SHIFT up 1 V (halves lengths), or the floor knob to -3.0 V (Source value 35). Each volt doubles the time.
-  (3) The ES-8's 4 inputs are full (walks, rates); an ES-6 MK3 adds 6 inputs, about $160-199, DC coupling must be on.
+  (3) DONE 2026-10-11: an ES-6 MK3 added 6 inputs (inputs 5-10), GT4 jumpers removed for DC.
   (4) New iMac (rumored M6, October) and a Mac mini model host are on hold; the user decided to do nothing for now.
 - Idea to discuss next (user, 2026-10-08): add the Joranalogue Morph 4 so longer envelopes are a bit louder and shorter ones
   a bit quieter, driven by the clamped rate voltage (more negative = longer). Feasible in principle: Morph 4 is four
@@ -86,8 +92,7 @@ option; this file is only what a fresh session needs.
   jacks read about 5% low (4 V reads 3.82 V; a Contour's +10 V peak read 9.4 V before the ES-6 existed). Forum summaries say ES-8 inputs are
   uncalibrated (scale and offset in software if exact volts matter); not corrected in my scripts. `monitor_volts.py` and the other logging
   scripts are limited to 4 inputs: NOT yet updated for the ES-6 inputs (offer to do it). RESOLVED (2026-10-12): the ES-6's channels 3-8 (even the two with no jacks) went to junk (swings of about +-10 V, or steps of about 0.667 V) 10-100 s after a stream opened, highest channels first, while jacks 1-2 and the ES-8's own jacks stayed clean. Jumpers (GT4 on or off), the ES-8 clock source (ADAT Clock vs Internal) and just mounting did NOT change it; reseating the ribbon and optical cable gave one clean run with the modules loose. The cause was the ES-6 being PRESSED against its bulky neighbour (a Doepfer A-121-3) in a tight rack: removing that module (the only change) turned a junk run clean, and 3 runs in a row (5, 5, 10 min, 12 inputs, 0 episodes) stayed clean with a gap. A Doepfer A-150 now sits in the old A-121-3 slot beside the ES-6 and tested clean too (10 min patched, 5 min with all cables out); the user cancelled a blank-panel order. Mechanism unknown (pressure on the board or connectors, or coupling). If junk returns, check spacing first. Check with `junk_watch`-style logging (open the stream, log when |v| > 0.3 V). With the jumpers off all six jacks hold steady DC (jacks 1-6 read 1.018, 2.003, 2.968, 3.870, 0.920, 1.954 V for about 1, 2, 3, 4, 1, 2 V) and empty even jacks beside driven odd ones show no noise or meaningful bleed. The ES-8's out 1 -> in 2 loopback is linear at 95.9% (the ES-8 is uncalibrated, as the forum says; no correction wanted). Forum thread (ModWiggler, Expert Sleepers section): os replied that the junk was not expected and the jumpers should not matter; the user is posting an update with the cause. Expert Sleepers' docs live in Gear Manuals/expertsleepers (HTML).
-- Ordered: ES-6 MK3 input expander + 15 cm optical cable. Before installing read its manual page: remove the DC-blocking
-  jumpers on header GT4 (factory default blocks DC), 10-way ribbon to a header on the ES-8 PCB, 10-pin power.
+- ES-6 MK3 is installed (see the ES-6 note above; the 15 cm optical cable goes ES-6 OUT to ES-8 ADAT IN).
 - CV pitch mode (2026-10-09, user asked for it; no MIDI): Dice, Bloom, 321 and Scales are out of the loop. ES-8 out 1/2 send
   1 V/oct pitch straight to the two AJH oscillators, quantized in software to Bb minor pentatonic (0 V = the root, notes -1 V to
   +1.9 V). Contour envelopes come back on ES-8 in 1/2 (the A-166/Compare 2 halters still fire them, a clock feeds the A-166); the
