@@ -39,6 +39,24 @@ The voices (levels 0.0 = silent to 1.0 = full):
 Write the next chapter. Rules: chapters last 1 to 4 minutes; ramps take 10 to 90 seconds and are at most half the chapter; change at most two voices by a lot at once; never silence all four; do not repeat the previous chapter; use the whole range, with real silence and real fullness for contrast, not only middle values. Keep the mood calm and slow."""
 
 
+# Chapters written by hosted Claude on 2026-10-13 (a dry run), used as a worked example for small models.
+EXAMPLE = [
+    ("Waking Stillness", (0.45, 0.00, 0.12, 0.30), "A quiet opening where one melodic voice rises over a soft drone, with the second voice held back for later contrast."),
+    ("Opening Bloom", (0.70, 0.55, 0.10, 0.15), "Bringing in the second melodic voice makes a fuller pair while the drone eases back to rest the ear."),
+    ("Hollow Drift", (0.20, 0.85, 0.35, 0.00), "After the bloom, the drone drops to true silence and env1 recedes while env2 takes the lead, with piano gently stepping forward for contrast."),
+    ("Quiet Descent", (0.00, 0.40, 0.50, 0.45), "After the fullness of env2, env1 falls to true silence while the drone returns to anchor and piano sparkles through the open space."),
+    ("Rising Fullness", (0.90, 0.60, 0.08, 0.25), "After the sparse descent, the melodic pair swells to full while the piano recedes and the drone eases off."),
+    ("Ebbing Light", (0.12, 0.00, 0.30, 0.10), "After the full bloom, the melodic voices recede and let the sparse piano glow in the open space."),
+]
+
+
+def example_text() -> str:
+    lines = [f"{i + 1}. {n}: " + ", ".join(f"{v} {x:.2f}" for v, x in zip(VOICES, lv)) + f" - {why}"
+             for i, (n, lv, why) in enumerate(EXAMPLE)]
+    return ("\n\nHere is an example of a good opening, to show the range and the contrast. Do NOT copy it: write new "
+            "chapters with their own names and shapes, and make real use of 0.00 and of high levels.\n" + "\n".join(lines))
+
+
 def schema() -> dict:
     level = {"type": "number", "minimum": 0, "maximum": 1}
     return {
@@ -88,13 +106,20 @@ def ask_ollama(history, elapsed, model) -> dict:
         raise SystemExit(f"Cannot reach Ollama at {OLLAMA_URL}: {e}")
 
 
+def _no_ranges(node):
+    """The API's JSON schema does not accept minimum/maximum on numbers; clean() clamps the values anyway."""
+    if isinstance(node, dict):
+        return {k: _no_ranges(v) for k, v in node.items() if k not in ("minimum", "maximum")}
+    return node
+
+
 def ask_claude(history, elapsed, model) -> dict:
     import anthropic
     client = anthropic.Anthropic()
     msg = client.messages.create(
         model=model, max_tokens=600, system=SYSTEM,
         messages=[{"role": "user", "content": user_prompt(history, elapsed)}],
-        output_config={"format": {"type": "json_schema", "schema": schema()}})
+        output_config={"format": {"type": "json_schema", "schema": _no_ranges(schema())}})
     return json.loads(next(b.text for b in msg.content if b.type == "text"))
 
 
@@ -125,10 +150,14 @@ def main():
     p.add_argument("--backend", choices=["ollama", "claude", "mock"], default="ollama")
     p.add_argument("--model", help="override the model name")
     p.add_argument("--chapters", type=int, default=10, help="how many chapters to write (default 10)")
+    p.add_argument("--examples", action="store_true", help="add a worked example of good chapters to the prompt (for small models)")
     p.add_argument("--live", action="store_true", help="send the levels to the ES-8 and wait out each chapter")
     p.add_argument("--first-out", type=int, default=1, help="first of the four ES-8 outputs (default 1: outputs 1-4)")
     p.add_argument("--time-scale", type=float, default=1.0, help="multiply chapter and ramp times (0.25 = four times faster)")
     args = p.parse_args()
+    global SYSTEM
+    if args.examples:
+        SYSTEM += example_text()
     model = args.model or (DEFAULT_OLLAMA_MODEL if args.backend == "ollama" else DEFAULT_CLAUDE_MODEL)
     ask = {"ollama": ask_ollama, "claude": ask_claude, "mock": ask_mock}[args.backend]
 
