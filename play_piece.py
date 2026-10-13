@@ -39,6 +39,8 @@ def main():
     p.add_argument("--time-scale", type=float, default=1.0, help="multiply chapter and ramp times (0.5 = twice as fast)")
     p.add_argument("--master", type=float, default=1.0, help="multiply every level (0-1.5; never goes above 1.0 per voice)")
     p.add_argument("--first-out", type=int, default=1, help="first of the four ES-8 outputs (default 1: outputs 1-4)")
+    p.add_argument("--hold-out1", type=float, default=None, metavar="VOLTS",
+                   help="hold the first output at a fixed voltage (e.g. -1) instead of the env1 level")
     p.add_argument("--loop", action="store_true", help="ease back to the first chapter and play again until Ctrl-C")
     p.add_argument("--dry-run", action="store_true", help="print the timeline and send nothing to the ES-8")
     args = p.parse_args()
@@ -62,7 +64,10 @@ def main():
             return
         es8.set_slew(MAX_LEVEL_VOLTS / max(1.0, ramp_seconds * args.time_scale))
         for i, v in enumerate(VOICES):
-            es8.set_cv(args.first_out + i, min(1.0, max(0.0, levels[v] * args.master)) * MAX_LEVEL_VOLTS)
+            volts = min(1.0, max(0.0, levels[v] * args.master)) * MAX_LEVEL_VOLTS
+            if i == 0 and args.hold_out1 is not None:
+                volts = args.hold_out1
+            es8.set_cv(args.first_out + i, volts)
 
     try:
         round_no = 0

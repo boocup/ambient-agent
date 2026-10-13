@@ -49,7 +49,7 @@ class ES8:
         for c in in_channels:
             if not 1 <= c <= n_in:
                 raise SystemExit(f"ES-8 input {c} doesn't exist (1-{n_in})")
-        if not 1 <= out_channel <= n_out:
+        if out_channel and not 1 <= out_channel <= n_out:      # 0 = no trigger output (all outputs free for CV)
             raise SystemExit(f"ES-8 output {out_channel} doesn't exist (1-{n_out})")
         self.device_name = info["name"]
         self.rate = int(info["default_samplerate"])

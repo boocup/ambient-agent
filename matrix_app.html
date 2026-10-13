@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CV Matrix</title>
+<style>
+  :root { --bg:#14161a; --panel:#1d2026; --line:#2b3039; --text:#e6e8eb; --dim:#8b93a1; --accent:#e0a44a; --on:#4ac0a0; }
+  :root:not([data-theme="dark"]) { }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --bg:#f2f3f5; --panel:#fff; --line:#d5d9e0; --text:#1c2026; --dim:#667080; --accent:#b8741a; --on:#12806a; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.4 -apple-system, system-ui, sans-serif; }
+  main { max-width:1180px; margin:0 auto; padding:16px; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; margin:10px 0 14px; }
+  button, select, input { font:inherit; color:var(--text); background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:5px 10px; }
+  button { cursor:pointer; } button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); color:#111; border-color:var(--accent); font-weight:600; }
+  input[type=number] { width:74px; } input.name { width:150px; }
+  .status { color:var(--dim); } .status b { color:var(--on); }
+  .grid { overflow-x:auto; }
+  .head, .row { display:grid; grid-template-columns:34px 150px 66px 66px repeat(8, 84px) 58px; gap:6px; align-items:center; min-width:1000px; }
+  .head { color:var(--dim); font-size:12px; padding:0 6px 4px; }
+  .head div { text-align:center; } .head .l { text-align:left; }
+  .live { color:var(--on); font-variant-numeric:tabular-nums; font-size:12px; }
+  .row { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:8px 6px; margin-bottom:6px; position:relative; }
+  .row.cur { border-color:var(--on); }
+  .row .prog { position:absolute; left:0; bottom:0; height:3px; background:var(--on); border-radius:0 0 8px 8px; width:0; transition:width .25s linear; }
+  .num { text-align:center; color:var(--dim); cursor:pointer; font-weight:600; } .num:hover { color:var(--accent); }
+  .knob { display:flex; flex-direction:column; align-items:center; gap:2px; user-select:none; }
+  .dial { width:42px; height:42px; border-radius:50%; background:var(--bg); border:2px solid var(--line); position:relative; cursor:ns-resize; touch-action:none; }
+  .dial::after { content:""; position:absolute; left:50%; top:3px; width:3px; height:15px; margin-left:-1.5px; border-radius:2px; background:var(--accent); transform-origin:50% 18px; transform:rotate(var(--a)); }
+  .dial.neg::after { background:#6aa8ff; }
+  .val { font-size:12px; font-variant-numeric:tabular-nums; color:var(--dim); }
+  .tools { display:flex; gap:4px; justify-content:flex-end; } .tools button { padding:2px 7px; }
+  .note { color:var(--dim); font-size:12px; margin-top:10px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>CV Matrix</h1>
+  <div class="status" id="status">loading…</div>
+  <div class="bar">
+    <button class="primary" id="play">▶ Play from row <span id="sel">1</span></button>
+    <button id="stop">■ Stop (glide to 0 V)</button>
+    <label>Speed <input type="number" id="speed" min="0.05" max="20" step="0.05" value="1"> (0.5 = twice as fast)</label>
+    <label><input type="checkbox" id="loop"> Loop</label>
+    <span style="flex:1"></span>
+    <select id="pieces"><option value="">Load a piece…</option></select>
+    <button id="export">Export as piece</button>
+  </div>
+  <div class="grid">
+    <div class="head" id="head"></div>
+    <div id="rows"></div>
+  </div>
+  <button id="add" style="margin-top:6px">+ Add row</button>
+  <p class="note">Drag a knob up or down (hold Shift for fine steps). Double-click a knob for 0 V. Click a row number to select it, or to jump there while playing.
+  Time is the whole row in seconds; glide is the part of it spent moving from the previous row. All knobs run -5 to +5 V.
+  Outputs 1-4 are the Morph 4 levels when a piece is loaded: only 0 to +5 V makes sense there.</p>
+</main>
+<script>
+const N = 8;
+let grid = { rows: [], speed: 1, loop: false };
+let selected = 0, saveTimer = null;
+const $ = id => document.getElementById(id);
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", body: JSON.stringify(body) } : undefined);
+  return r.json();
+}
+function queueSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => api("/api/grid", grid), 250);
+}
+function angle(v) { return -135 + (v + 5) / 10 * 270; }
+
+function build() {
+  $("head").innerHTML = '<div></div><div class="l">Chapter</div><div>Time s</div><div>Glide s</div>' +
+    Array.from({ length: N }, (_, i) => `<div>Out ${i + 1}<br><span class="live" id="live${i}">–</span></div>`).join("") + "<div></div>";
+  const rows = $("rows");
+  rows.innerHTML = "";
+  grid.rows.forEach((r, i) => {
+    const el = document.createElement("div");
+    el.className = "row"; el.id = "row" + i;
+    el.innerHTML = `<div class="num" title="select / jump here">${i + 1}</div>
+      <input class="name" value="${r.name.replace(/"/g, "&quot;")}">
+      <input type="number" class="time" min="1" max="3600" value="${r.time}">
+      <input type="number" class="glide" min="0" max="3600" value="${r.glide}">` +
+      r.values.map((v, k) => `<div class="knob"><div class="dial" data-k="${k}"></div><div class="val"></div></div>`).join("") +
+      `<div class="tools"><button title="duplicate">⧉</button><button title="delete">✕</button></div><div class="prog"></div>`;
+    rows.appendChild(el);
+    el.querySelector(".num").onclick = () => { selected = i; markSel(); if (playing) api("/api/play", { row: i }); };
+    el.querySelector(".name").oninput = e => { r.name = e.target.value; queueSave(); };
+    el.querySelector(".time").onchange = e => { r.time = +e.target.value; r.glide = Math.min(r.glide, r.time); build(); queueSave(); };
+    el.querySelector(".glide").onchange = e => { r.glide = Math.min(+e.target.value, r.time); build(); queueSave(); };
+    el.querySelectorAll(".dial").forEach(d => attachKnob(d, r, +d.dataset.k));
+    const [dup, del] = el.querySelectorAll(".tools button");
+    dup.onclick = () => { grid.rows.splice(i + 1, 0, JSON.parse(JSON.stringify(r))); build(); queueSave(); };
+    del.onclick = () => { if (grid.rows.length > 1) { grid.rows.splice(i, 1); selected = Math.min(selected, grid.rows.length - 1); build(); queueSave(); } };
+    r.values.forEach((_, k) => paint(el, r, k));
+  });
+  markSel();
+}
+function paint(el, r, k) {
+  const d = el.querySelectorAll(".dial")[k], v = r.values[k];
+  d.style.setProperty("--a", angle(v) + "deg");
+  d.classList.toggle("neg", v < 0);
+  el.querySelectorAll(".val")[k].textContent = (v >= 0 ? "+" : "") + v.toFixed(2) + " V";
+}
+function attachKnob(d, r, k) {
+  d.addEventListener("pointerdown", e => {
+    d.setPointerCapture(e.pointerId);
+    const y0 = e.clientY, v0 = r.values[k];
+    const move = ev => {
+      const per = ev.shiftKey ? 2000 : 200;                 // pixels for the full 10 V
+      r.values[k] = Math.round(Math.max(-5, Math.min(5, v0 + (y0 - ev.clientY) / per * 10)) * 100) / 100;
+      paint(d.closest(".row"), r, k); queueSave();
+    };
+    const up = () => { d.removeEventListener("pointermove", move); d.removeEventListener("pointerup", up); };
+    d.addEventListener("pointermove", move); d.addEventListener("pointerup", up);
+  });
+  d.addEventListener("dblclick", () => { r.values[k] = 0; paint(d.closest(".row"), r, k); queueSave(); });
+}
+function markSel() { $("sel").textContent = selected + 1; }
+
+let playing = false;
+async function poll() {
+  try {
+    const s = await api("/api/status");
+    playing = s.playing;
+    document.querySelectorAll(".row").forEach((el, i) => {
+      el.classList.toggle("cur", i === s.current);
+      el.querySelector(".prog").style.width = i === s.current && s.row_time ? Math.min(100, s.elapsed / s.row_time * 100) + "%" : "0";
+    });
+    for (let k = 0; k < N; k++) $("live" + k).textContent = s.volts ? s.volts[k].toFixed(2) : "–";
+    $("status").innerHTML = (s.dry_run ? "Dry run: nothing is sent. " : "") + (s.playing
+      ? `<b>Playing row ${s.current + 1}</b> (${Math.round(s.elapsed)} of ${Math.round(s.row_time)} s)` : "Stopped.") + (s.message ? " " + s.message : "");
+  } catch (e) { $("status").textContent = "Server not reachable."; }
+}
+
+$("play").onclick = () => api("/api/play", { row: selected });
+$("stop").onclick = () => api("/api/stop", {});
+$("speed").onchange = e => { grid.speed = +e.target.value || 1; queueSave(); };
+$("loop").onchange = e => { grid.loop = e.target.checked; queueSave(); };
+$("add").onclick = () => { grid.rows.push({ name: "Chapter " + (grid.rows.length + 1), time: 60, glide: 10, values: Array(N).fill(0) }); build(); queueSave(); };
+$("pieces").onchange = async e => {
+  if (!e.target.value) return;
+  if (!confirm("Replace the grid with this piece? (Outputs 1-4 get the levels; the current grid is overwritten.)")) { e.target.value = ""; return; }
+  grid = await api("/api/load_piece", { file: e.target.value }); e.target.value = ""; selected = 0; build();
+};
+$("export").onclick = async () => {
+  const title = prompt("Name for the exported piece:", "matrix piece");
+  if (title) alert("Saved as pieces/" + (await api("/api/export_piece", { title })).file);
+};
+
+(async () => {
+  const g = await api("/api/grid");
+  grid = g;
+  $("speed").value = g.speed; $("loop").checked = g.loop;
+  g.pieces.forEach(p => { const o = document.createElement("option"); o.value = o.textContent = p; $("pieces").appendChild(o); });
+  build();
+  setInterval(poll, 300); poll();
+})();
+</script>
+</body>
+</html>
