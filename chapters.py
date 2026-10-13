@@ -181,10 +181,14 @@ def main():
 def run(args, ask, model, history, es8, elapsed, chapter_end):
     for i in range(args.chapters):
         t0 = time.time()
-        try:
-            c = clean(ask(history, elapsed, model))
-        except (KeyError, ValueError, json.JSONDecodeError) as e:
-            print(f"chapter {i + 1}: bad answer ({e}); stopping")
+        c = None
+        for attempt in range(3):                      # a model now and then returns cut-off JSON: ask again
+            try:
+                c = clean(ask(history, elapsed, model))
+                break
+            except (KeyError, ValueError, json.JSONDecodeError) as e:
+                print(f"chapter {i + 1}: bad answer ({e}); " + ("asking again" if attempt < 2 else "giving up"), flush=True)
+        if c is None:
             break
         took = time.time() - t0
         if es8:                                   # the model wrote it while the last chapter played; now wait it out
