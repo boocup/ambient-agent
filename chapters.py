@@ -86,6 +86,7 @@ def user_prompt(history: list[dict], elapsed_min: float) -> str:
 def clean(c: dict) -> dict:
     """Clamp everything to the allowed range, so a bad answer can never push the rack outside it."""
     c["levels"] = {v: min(1.0, max(0.0, float(c["levels"].get(v, 0.0)))) for v in VOICES}
+    c["levels"].update(FIXED)                                         # fixed voices ignore whatever the model wrote
     c["minutes"] = min(4.0, max(1.0, float(c["minutes"])))
     c["ramp_seconds"] = min(90.0, max(10.0, float(c["ramp_seconds"])))
     c["ramp_seconds"] = min(c["ramp_seconds"], c["minutes"] * 30)   # at most half the chapter
@@ -129,6 +130,7 @@ def ask_mock(history, elapsed, model) -> dict:
             "minutes": round(rng.uniform(1, 4), 1), "ramp_seconds": rng.uniform(10, 60), "why": "mock"}
 
 
+FIXED: dict[str, float] = {}   # voices the model does not control (set by --fixed), always at this level
 MAX_LEVEL_VOLTS = 5.0   # +5 V is unity on a Morph 4 level input; never send more
 
 
@@ -151,11 +153,20 @@ def main():
     p.add_argument("--model", help="override the model name")
     p.add_argument("--chapters", type=int, default=10, help="how many chapters to write (default 10)")
     p.add_argument("--examples", action="store_true", help="add a worked example of good chapters to the prompt (for small models)")
+    p.add_argument("--fixed", default="", help="voices the model does not control, as name=level, e.g. env2=1,drone=1")
     p.add_argument("--live", action="store_true", help="send the levels to the ES-8 and wait out each chapter")
     p.add_argument("--first-out", type=int, default=1, help="first of the four ES-8 outputs (default 1: outputs 1-4)")
     p.add_argument("--time-scale", type=float, default=1.0, help="multiply chapter and ramp times (0.25 = four times faster)")
     args = p.parse_args()
     global SYSTEM
+    for item in filter(None, args.fixed.split(",")):
+        name, _, level = item.partition("=")
+        if name not in VOICES:
+            raise SystemExit(f"--fixed: unknown voice {name!r} (voices: {', '.join(VOICES)})")
+        FIXED[name] = min(1.0, max(0.0, float(level or 1.0)))
+    if FIXED:
+        SYSTEM += ("\n\nThe performer holds these voices at fixed levels, so do not try to change them: "
+                   + ", ".join(f"{k} = {v:.2f}" for k, v in FIXED.items()) + ". Write the other voices so they work with them.")
     if args.examples:
         SYSTEM += example_text()
     model = args.model or (DEFAULT_OLLAMA_MODEL if args.backend == "ollama" else DEFAULT_CLAUDE_MODEL)

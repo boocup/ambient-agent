@@ -1,0 +1,97 @@
+{
+  "title": "Quiet Dawn: hosted Claude, 6 chapters",
+  "saved": "2026-10-13",
+  "source": {
+    "backend": "claude",
+    "model": "claude-sonnet-5-5",
+    "prompt": "chapters.py SYSTEM (no examples, all four voices free)"
+  },
+  "voices": {
+    "env1": "Morph 4 level A (AJH melodic voice 1)",
+    "env2": "level B (AJH melodic voice 2)",
+    "piano": "level C (MicroFreak soft stochastic)",
+    "drone": "level D (Mother32 pulse drone)"
+  },
+  "how_played": "ES-8 outputs 1-4, level 0-1 = 0-5 V, played with --time-scale 0.5 (chapter and ramp times HALVED) when the user heard it ('so rich')",
+  "note": "minutes and ramp_seconds below are as written (unscaled). Play in order; do not shuffle.",
+  "chapters": [
+    {
+      "n": 1,
+      "name": "Quiet Dawn Emergence",
+      "levels": {
+        "env1": 0.35,
+        "env2": 0.0,
+        "piano": 0.12,
+        "drone": 0.5
+      },
+      "minutes": 2.0,
+      "ramp_seconds": 30.0,
+      "why": "The piece opens sparse, with a gentle drone and a single melodic voice, leaving real silence in env2 and room to build."
+    },
+    {
+      "n": 2,
+      "name": "Rising Pale Light",
+      "levels": {
+        "env1": 0.6,
+        "env2": 0.55,
+        "piano": 0.1,
+        "drone": 0.2
+      },
+      "minutes": 3.0,
+      "ramp_seconds": 60.0,
+      "why": "The second melodic voice joins to form a pair while the drone eases back so it does not tire the ear."
+    },
+    {
+      "n": 3,
+      "name": "Hollow Silver Stillness",
+      "levels": {
+        "env1": 0.15,
+        "env2": 0.9,
+        "piano": 0.35,
+        "drone": 0.0
+      },
+      "minutes": 3.0,
+      "ramp_seconds": 45.0,
+      "why": "After the paired swell, the drone drops to true silence and env2 takes the lead, with env1 stepping back and the piano sparkling in the open space."
+    },
+    {
+      "n": 4,
+      "name": "Luminous Swell",
+      "levels": {
+        "env1": 0.85,
+        "env2": 0.75,
+        "piano": 0.12,
+        "drone": 0.15
+      },
+      "minutes": 3.5,
+      "ramp_seconds": 50.0,
+      "why": "After the hollow stillness, env1 rises to join env2 in a full melodic bloom while the piano steps back and the drone stays barely there."
+    },
+    {
+      "n": 5,
+      "name": "Fading Afterglow Hush",
+      "levels": {
+        "env1": 0.0,
+        "env2": 0.1,
+        "piano": 0.4,
+        "drone": 0.3
+      },
+      "minutes": 2.5,
+      "ramp_seconds": 45.0,
+      "why": "After the full swell, the melodic bed falls away so the piano can drift through the open space over a gentle drone."
+    },
+    {
+      "n": 6,
+      "name": "Deep Drone Return",
+      "levels": {
+        "env1": 0.05,
+        "env2": 0.45,
+        "piano": 0.15,
+        "drone": 0.8
+      },
+      "minutes": 3.0,
+      "ramp_seconds": 60.0,
+      "why": "After the hush, the drone returns full and warm beneath a soft env2 for contrast, while env1 rests and piano sparkles lightly."
+    }
+  ]
+}
