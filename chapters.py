@@ -1,0 +1,183 @@
+"""AI "chapter" conductor for the Morph 4 levels. By default a dry run: prints and logs only, sends NOTHING to the ES-8.
+With --live it sends each chapter's four levels as 0-5 V from four consecutive ES-8 outputs (default 1-4, to the Morph 4
+level CV inputs A-D), gliding over the chapter's ramp time, and waits out each chapter in real time.
+
+Four voices go into the Joranalogue Morph 4. Every chapter (a minute or three) the model picks a level for each voice, how
+long the chapter lasts and how slowly to ramp there. Levels are 0-1 (later 0-5 V on the Morph 4 level CVs).
+
+    python chapters.py --backend ollama            # local model (qwen2.5:7b), free
+    python chapters.py --backend mock              # no model, random chapters (baseline to compare against)
+    python chapters.py --backend claude            # hosted Claude: costs a few cents, ask first
+    python chapters.py --live --time-scale 0.25    # real voltage; chapters 4x shorter than written (a first listen)
+
+Each run writes chapters_log.jsonl (one line per chapter) and prints a summary. Read the chapters and ask: would this
+sound musical? Nothing here touches the rack.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import random
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+OLLAMA_URL = "http://localhost:11434"
+DEFAULT_OLLAMA_MODEL = "qwen2.5:7b"
+DEFAULT_CLAUDE_MODEL = "claude-sonnet-5-5"
+VOICES = ["env1", "env2", "piano", "drone"]
+LOG = Path(__file__).with_name("chapters_log.jsonl")
+
+SYSTEM = """You conduct slow ambient music by setting the level of four voices that feed a mixer.
+The voices (levels 0.0 = silent to 1.0 = full):
+- env1: a melodic voice with slow, long, evolving envelopes. Part of the main melodic bed.
+- env2: a second melodic voice of the same kind, with different timing. Plays with env1 as a pair.
+- piano: a sparse, random, soft piano-like voice. Plays single quiet notes at irregular times. Sparkle: too loud and it covers the others, silent for a long time and the music feels empty.
+- drone: a steady pulsing drone on one repeated note. It anchors the mood but tires the ear if it stays loud for many chapters.
+Write the next chapter. Rules: chapters last 1 to 4 minutes; ramps take 10 to 90 seconds and are at most half the chapter; change at most two voices by a lot at once; never silence all four; do not repeat the previous chapter; use the whole range, with real silence and real fullness for contrast, not only middle values. Keep the mood calm and slow."""
+
+
+def schema() -> dict:
+    level = {"type": "number", "minimum": 0, "maximum": 1}
+    return {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "two or three words naming the chapter's mood"},
+            "levels": {"type": "object", "properties": {v: level for v in VOICES}, "required": VOICES,
+                       "additionalProperties": False},
+            "minutes": {"type": "number", "minimum": 1, "maximum": 4},
+            "ramp_seconds": {"type": "number", "minimum": 10, "maximum": 90},
+            "why": {"type": "string", "description": "one short sentence"},
+        },
+        "required": ["name", "levels", "minutes", "ramp_seconds", "why"],
+        "additionalProperties": False,
+    }
+
+
+def user_prompt(history: list[dict], elapsed_min: float) -> str:
+    if not history:
+        return "This is the opening chapter. The piece has just begun. Write chapter 1."
+    lines = [f"{i + 1}. {c['name']}: " + ", ".join(f"{v} {c['levels'][v]:.2f}" for v in VOICES)
+             + f" ({c['minutes']:.1f} min)" for i, c in enumerate(history[-6:], start=max(0, len(history) - 6))]
+    return (f"The piece has been playing for {elapsed_min:.0f} minutes. Recent chapters:\n" + "\n".join(lines)
+            + f"\nWrite chapter {len(history) + 1}.")
+
+
+def clean(c: dict) -> dict:
+    """Clamp everything to the allowed range, so a bad answer can never push the rack outside it."""
+    c["levels"] = {v: min(1.0, max(0.0, float(c["levels"].get(v, 0.0)))) for v in VOICES}
+    c["minutes"] = min(4.0, max(1.0, float(c["minutes"])))
+    c["ramp_seconds"] = min(90.0, max(10.0, float(c["ramp_seconds"])))
+    c["ramp_seconds"] = min(c["ramp_seconds"], c["minutes"] * 30)   # at most half the chapter
+    if max(c["levels"].values()) < 0.05:
+        c["levels"]["drone"] = 0.3                                    # never silence all four
+    return c
+
+
+def ask_ollama(history, elapsed, model) -> dict:
+    body = {"model": model, "stream": False, "format": schema(), "options": {"temperature": 0.9},
+            "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user_prompt(history, elapsed)}]}
+    req = urllib.request.Request(OLLAMA_URL + "/api/chat", data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            return json.loads(json.loads(resp.read())["message"]["content"])
+    except urllib.error.URLError as e:
+        raise SystemExit(f"Cannot reach Ollama at {OLLAMA_URL}: {e}")
+
+
+def ask_claude(history, elapsed, model) -> dict:
+    import anthropic
+    client = anthropic.Anthropic()
+    msg = client.messages.create(
+        model=model, max_tokens=600, system=SYSTEM,
+        messages=[{"role": "user", "content": user_prompt(history, elapsed)}],
+        output_config={"format": {"type": "json_schema", "schema": schema()}})
+    return json.loads(next(b.text for b in msg.content if b.type == "text"))
+
+
+def ask_mock(history, elapsed, model) -> dict:
+    rng = random.Random(len(history))
+    return {"name": "random", "levels": {v: round(rng.random(), 2) for v in VOICES},
+            "minutes": round(rng.uniform(1, 4), 1), "ramp_seconds": rng.uniform(10, 60), "why": "mock"}
+
+
+MAX_LEVEL_VOLTS = 5.0   # +5 V is unity on a Morph 4 level input; never send more
+
+
+def start_es8(first_out: int):
+    from es8 import ES8
+    cvs = tuple(range(first_out, first_out + len(VOICES)))
+    trigger = 8 if 8 not in cvs else 7          # ES8 wants a trigger output; it just stays at 0 V
+    return ES8(in_channels=[1], out_channel=trigger, level=0.0, cv_channels=cvs, cv_slew=1.0)
+
+
+def apply_chapter(es8, first_out: int, c: dict, time_scale: float):
+    es8.set_slew(MAX_LEVEL_VOLTS / max(1.0, c["ramp_seconds"] * time_scale))
+    for i, v in enumerate(VOICES):
+        es8.set_cv(first_out + i, c["levels"][v] * MAX_LEVEL_VOLTS)
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--backend", choices=["ollama", "claude", "mock"], default="ollama")
+    p.add_argument("--model", help="override the model name")
+    p.add_argument("--chapters", type=int, default=10, help="how many chapters to write (default 10)")
+    p.add_argument("--live", action="store_true", help="send the levels to the ES-8 and wait out each chapter")
+    p.add_argument("--first-out", type=int, default=1, help="first of the four ES-8 outputs (default 1: outputs 1-4)")
+    p.add_argument("--time-scale", type=float, default=1.0, help="multiply chapter and ramp times (0.25 = four times faster)")
+    args = p.parse_args()
+    model = args.model or (DEFAULT_OLLAMA_MODEL if args.backend == "ollama" else DEFAULT_CLAUDE_MODEL)
+    ask = {"ollama": ask_ollama, "claude": ask_claude, "mock": ask_mock}[args.backend]
+
+    history: list[dict] = []
+    elapsed = 0.0
+    es8 = start_es8(args.first_out) if args.live else None
+    chapter_end = time.time()
+    print(f"{'LIVE' if es8 else 'Dry run'}: {args.chapters} chapters, backend {args.backend}"
+          + ("" if args.backend == "mock" else f" ({model})")
+          + (f". Sending 0-5 V on ES-8 outputs {args.first_out}-{args.first_out + 3}; Ctrl-C ends it at 0 V.\n"
+             if es8 else ". Nothing is sent to the rack.\n"))
+    try:
+        run(args, ask, model, history, es8, elapsed, chapter_end)
+    except KeyboardInterrupt:
+        print("\nStopped.")
+    finally:
+        if es8:
+            es8.close()
+
+
+def run(args, ask, model, history, es8, elapsed, chapter_end):
+    for i in range(args.chapters):
+        t0 = time.time()
+        try:
+            c = clean(ask(history, elapsed, model))
+        except (KeyError, ValueError, json.JSONDecodeError) as e:
+            print(f"chapter {i + 1}: bad answer ({e}); stopping")
+            break
+        took = time.time() - t0
+        if es8:                                   # the model wrote it while the last chapter played; now wait it out
+            time.sleep(max(0.0, chapter_end - time.time()))
+            apply_chapter(es8, args.first_out, c, args.time_scale)
+            chapter_end = time.time() + c["minutes"] * 60 * args.time_scale
+        history.append(c)
+        elapsed += c["minutes"]
+        with LOG.open("a") as f:
+            f.write(json.dumps({"backend": args.backend, "model": model, "n": i + 1, "t_min": round(elapsed, 1),
+                                "seconds_to_write": round(took, 1), **c}) + "\n")
+        lv = "  ".join(f"{v} {c['levels'][v]:.2f}" for v in VOICES)
+        print(f"{i + 1:2d}. {c['name'][:22]:22s} {lv}  | {c['minutes']:.1f} min, ramp {c['ramp_seconds']:.0f}s  [{took:.1f}s to write]")
+        print(f"      {c['why']}")
+    if es8 and history:
+        time.sleep(max(0.0, chapter_end - time.time()))   # let the last chapter finish
+    if history:
+        print(f"\n{len(history)} chapters, {elapsed:.0f} minutes of music. Log: {LOG.name}")
+        for v in VOICES:
+            xs = [c["levels"][v] for c in history]
+            print(f"  {v:6s} min {min(xs):.2f}  max {max(xs):.2f}  mean {sum(xs) / len(xs):.2f}")
+
+
+if __name__ == "__main__":
+    main()

@@ -111,6 +111,11 @@ class ES8:
             self._cv_target[col] = volts / FULL_SCALE_VOLTS
         return volts
 
+    def set_slew(self, volts_per_second: float):
+        """How fast every control voltage may glide toward its target, in volts per second."""
+        with self._lock:
+            self._cv_step = max(0.01, float(volts_per_second)) / FULL_SCALE_VOLTS
+
     def cv_volts(self, channel: int) -> float:
         """Where a control-voltage output is right now (it may still be gliding)."""
         with self._lock:
