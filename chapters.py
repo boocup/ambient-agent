@@ -40,6 +40,21 @@ The voices (levels 0.0 = silent to 1.0 = full):
 Write the next chapter. Rules: chapters last 1 to 4 minutes; ramps take 10 to 90 seconds and are at most half the chapter; change at most two voices by a lot at once; never silence all four; do not repeat the previous chapter; use the whole range, with real silence and real fullness for contrast, not only middle values. Keep the mood calm and slow."""
 
 
+# Used instead of SYSTEM when the performer gives their own description of the voices (--brief) or a voice count other than four.
+CUSTOM_SYSTEM = """You conduct slow ambient music by setting the level of {n} voice{plural} that feed a mixer. Levels run from 0.0 (silent) to 1.0 (full). The voice{plural} {are} called {names}, in that order.
+The performer describes the setup and what they want, in their own words:
+---
+{brief}
+---
+Write the next chapter. Rules: chapters last 1 to 4 minutes; ramps take 10 to 90 seconds and are at most half the chapter; change at most two voices by a lot at once (with a single voice, change it by a moderate amount); never silence every voice; do not repeat the previous chapter; use the whole range, with real silence and real fullness for contrast, not only middle values. Keep the mood calm and slow unless the performer asks for something else."""
+
+
+def custom_system(brief: str) -> str:
+    n = len(VOICES)
+    return CUSTOM_SYSTEM.format(n=n, plural="" if n == 1 else "s", are="is" if n == 1 else "are", names=", ".join(VOICES),
+                                brief=brief or "(no description given: treat the voices as equal and unspecified)")
+
+
 # Chapters written by hosted Claude on 2026-10-13 (a dry run), used as a worked example for small models.
 EXAMPLE = [
     ("Waking Stillness", (0.45, 0.00, 0.12, 0.30), "A quiet opening where one melodic voice rises over a soft drone, with the second voice held back for later contrast."),
@@ -92,7 +107,7 @@ def clean(c: dict) -> dict:
     c["ramp_seconds"] = min(90.0, max(10.0, float(c["ramp_seconds"])))
     c["ramp_seconds"] = min(c["ramp_seconds"], c["minutes"] * 30)   # at most half the chapter
     if max(c["levels"].values()) < 0.05:
-        c["levels"]["drone"] = 0.3                                    # never silence all four
+        c["levels"][VOICES[-1]] = 0.3                                 # never silence every voice (the drone, by default)
     return c
 
 
@@ -150,9 +165,9 @@ def apply_chapter(es8, first_out: int, c: dict, time_scale: float):
 
 def write_grid(history: list[dict], directory: Path) -> Path:
     """Write the chapters as a CV Matrix grid (the Swift app's Load grid format): one row per chapter, levels x 5 V on
-    outputs 1-4 in VOICES order, outputs 5-8 at 0 V. Named "YYYY-MM-DD-HHMM-<first chapter>.json"; never overwrites an existing file."""
+    the first outputs in VOICES order, the rest at 0 V. Named "YYYY-MM-DD-HHMM-<first chapter>.json"; never overwrites an existing file."""
     rows = [{"name": c["name"][:40], "time": round(c["minutes"] * 60, 1), "glide": round(c["ramp_seconds"], 1),
-             "values": [round(c["levels"][v] * MAX_LEVEL_VOLTS, 2) for v in VOICES] + [0.0] * 4} for c in history]
+             "values": [round(c["levels"][v] * MAX_LEVEL_VOLTS, 2) for v in VOICES] + [0.0] * (8 - len(VOICES))} for c in history]
     slug = "".join(ch if ch.isalnum() else "-" for ch in history[0]["name"].lower()).strip("-") or "piece"
     directory.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y-%m-%d-%H%M")
@@ -170,6 +185,12 @@ def main():
     p.add_argument("--chapters", type=int, default=10, help="how many chapters to write (default 10)")
     p.add_argument("--examples", action="store_true", help="add a worked example of good chapters to the prompt (for small models)")
     p.add_argument("--fixed", default="", help="voices the model does not control, as name=level, e.g. env2=1,drone=1")
+    p.add_argument("--voices", type=int, default=4, metavar="N",
+                   help="how many voices (1-8, default 4: the Morph 4 voices). Other counts name them voice1..voiceN")
+    p.add_argument("--brief", default="", help="the performer's own description of the voices and what they want; "
+                   "replaces the built-in description of the four voices")
+    p.add_argument("--direction", default="", help="free-text direction from the performer, added to the prompt for every chapter, "
+                   "e.g. 'sparse and dark, with long silences'")
     p.add_argument("--live", action="store_true", help="send the levels to the ES-8 and wait out each chapter")
     p.add_argument("--first-out", type=int, default=1, help="first of the four ES-8 outputs (default 1: outputs 1-4)")
     p.add_argument("--write-grid-dir", type=Path, metavar="DIR",
@@ -177,6 +198,14 @@ def main():
     p.add_argument("--time-scale", type=float, default=1.0, help="multiply chapter and ramp times (0.25 = four times faster)")
     args = p.parse_args()
     global SYSTEM
+    if not 1 <= args.voices <= 8:
+        raise SystemExit("--voices must be between 1 and 8")
+    brief = " ".join(args.brief.split())[:1500]
+    if brief or args.voices != len(VOICES):
+        if args.examples:
+            raise SystemExit("--examples describes the default four voices; use it without --brief or --voices")
+        VOICES[:] = [f"voice{i + 1}" for i in range(args.voices)]
+        SYSTEM = custom_system(brief)
     for item in filter(None, args.fixed.split(",")):
         name, _, level = item.partition("=")
         if name not in VOICES:
@@ -185,6 +214,10 @@ def main():
     if FIXED:
         SYSTEM += ("\n\nThe performer holds these voices at fixed levels, so do not try to change them: "
                    + ", ".join(f"{k} = {v:.2f}" for k, v in FIXED.items()) + ". Write the other voices so they work with them.")
+    direction = " ".join(args.direction.split())[:500]
+    if direction:
+        SYSTEM += ("\n\nThe performer's direction for this whole piece (follow it as far as the rules above allow): "
+                   + direction)
     if args.examples:
         SYSTEM += example_text()
     model = args.model or (DEFAULT_OLLAMA_MODEL if args.backend == "ollama" else DEFAULT_CLAUDE_MODEL)
