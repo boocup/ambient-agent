@@ -9,7 +9,7 @@ long the chapter lasts and how slowly to ramp there. Levels are 0-1 (later 0-5 V
     python chapters.py --backend mock              # no model, random chapters (baseline to compare against)
     python chapters.py --backend claude            # hosted Claude: costs a few cents, ask first
     python chapters.py --live --time-scale 0.25    # real voltage; chapters 4x shorter than written (a first listen)
-    python chapters.py --backend claude --write-grid-dir DIR   # also write a CV Matrix grid (see write_grid), named after chapter 1
+    python chapters.py --backend claude --write-grid-dir DIR   # also write a CV Matrix grid (see write_grid), named by date, time and chapter 1
 
 Each run writes chapters_log.jsonl (one line per chapter) and prints a summary. Read the chapters and ask: would this
 sound musical? Nothing here touches the rack.
@@ -150,14 +150,15 @@ def apply_chapter(es8, first_out: int, c: dict, time_scale: float):
 
 def write_grid(history: list[dict], directory: Path) -> Path:
     """Write the chapters as a CV Matrix grid (the Swift app's Load grid format): one row per chapter, levels x 5 V on
-    outputs 1-4 in VOICES order, outputs 5-8 at 0 V. Named after the first chapter; never overwrites an existing file."""
+    outputs 1-4 in VOICES order, outputs 5-8 at 0 V. Named "YYYY-MM-DD-HHMM-<first chapter>.json"; never overwrites an existing file."""
     rows = [{"name": c["name"][:40], "time": round(c["minutes"] * 60, 1), "glide": round(c["ramp_seconds"], 1),
              "values": [round(c["levels"][v] * MAX_LEVEL_VOLTS, 2) for v in VOICES] + [0.0] * 4} for c in history]
     slug = "".join(ch if ch.isalnum() else "-" for ch in history[0]["name"].lower()).strip("-") or "piece"
     directory.mkdir(parents=True, exist_ok=True)
-    path, n = directory / f"{slug}.json", 2
-    while path.exists():
-        path, n = directory / f"{slug}-{n}.json", n + 1
+    stamp = time.strftime("%Y-%m-%d-%H%M")
+    path, n = directory / f"{stamp}-{slug}.json", 2
+    while path.exists():                                              # two runs in the same minute
+        path, n = directory / f"{stamp}-{slug}-{n}.json", n + 1
     path.write_text(json.dumps({"rows": rows, "speed": 1.0, "loop": False}, indent=1))
     return path
 
